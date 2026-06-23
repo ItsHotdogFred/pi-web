@@ -102,6 +102,10 @@ let connectionState = "connecting";
 let gotReady = false;
 let startupBuffer = "";
 let startupSuppressed = false;
+let creatingSession = false;
+let awaitingNewAgentSession = false;
+let freshDashboardSession = false;
+let pendingDashboardPrompt = null;
 
 /* ── Utilities ── */
 
@@ -331,7 +335,7 @@ function setBusy(nextBusy) {
 	busy = nextBusy;
 	const connected = ws && ws.readyState === WebSocket.OPEN;
 	const canSendDashboard = Boolean(inputEl.value.trim() || dashboardAttachments.length);
-	sendEl.disabled = !connected || busy || !canSendDashboard;
+	sendEl.disabled = !connected || busy || creatingSession || !canSendDashboard;
 	cancelEl.disabled = !busy;
 	inputEl.disabled = !connected;
 	chatInputEl.disabled = !connected;
@@ -757,6 +761,9 @@ function upsertSession(entry) {
 
 function openSession(id) {
 	if (id === sessionId && currentView === "chat") return;
+	awaitingNewAgentSession = false;
+	freshDashboardSession = false;
+	pendingDashboardPrompt = null;
 	switchSession(id);
 	showView("chat");
 }
@@ -767,8 +774,25 @@ function switchSession(id) {
 }
 
 function newSession() {
-	if (!ws || ws.readyState !== WebSocket.OPEN) return;
+	if (!ws || ws.readyState !== WebSocket.OPEN || creatingSession) return;
+	creatingSession = true;
+	setBusy(busy);
 	ws.send(JSON.stringify({ type: "new_session" }));
+}
+
+function startNewAgent() {
+	setNavActive("new-agent");
+	showView("dashboard");
+	awaitingNewAgentSession = true;
+	freshDashboardSession = false;
+	pendingDashboardPrompt = null;
+	newSession();
+	clearChat();
+	chatTitleEl.textContent = "New Agent";
+	inputEl.value = "";
+	resizeTextarea(inputEl);
+	clearAttachments(inputEl);
+	inputEl.focus();
 }
 
 function clearChangedFiles() {
@@ -1094,7 +1118,19 @@ function connect() {
 
 			case "session":
 				sessionId = msg.sessionId ?? null;
+				creatingSession = false;
+				if (awaitingNewAgentSession) {
+					awaitingNewAgentSession = false;
+					freshDashboardSession = true;
+				}
+				if (pendingDashboardPrompt) {
+					const pending = pendingDashboardPrompt;
+					pendingDashboardPrompt = null;
+					freshDashboardSession = false;
+					deliverPrompt(pending.text, pending.images);
+				}
 				renderSessions();
+				setBusy(busy);
 				break;
 
 			case "clear":
@@ -1184,18 +1220,8 @@ function connect() {
 
 /* ── Send prompt ── */
 
-function sendPrompt(text, fromChat = false) {
+function deliverPrompt(trimmed, images, fromChat = false) {
 	const target = fromChat ? chatInputEl : inputEl;
-	const trimmed = text.trim();
-	const attachments = [...getAttachmentsFor(target)];
-	if ((!trimmed && attachments.length === 0) || !ws || ws.readyState !== WebSocket.OPEN || busy) return;
-
-	const images = attachments.map(({ name, mimeType, data, previewUrl }) => ({
-		name,
-		mimeType,
-		data,
-		previewUrl,
-	}));
 
 	lastPrompt = trimmed || (images.length ? `[${images.length} image${images.length === 1 ? "" : "s"}]` : "");
 	showView("chat");
@@ -1212,6 +1238,30 @@ function sendPrompt(text, fromChat = false) {
 			images: images.map(({ mimeType, data }) => ({ mimeType, data })),
 		}),
 	);
+}
+
+function sendPrompt(text, fromChat = false) {
+	const target = fromChat ? chatInputEl : inputEl;
+	const trimmed = text.trim();
+	const attachments = [...getAttachmentsFor(target)];
+	if ((!trimmed && attachments.length === 0) || !ws || ws.readyState !== WebSocket.OPEN || busy) return;
+
+	const images = attachments.map(({ name, mimeType, data, previewUrl }) => ({
+		name,
+		mimeType,
+		data,
+		previewUrl,
+	}));
+
+	if (!fromChat && !freshDashboardSession) {
+		pendingDashboardPrompt = { text: trimmed, images };
+		awaitingNewAgentSession = true;
+		if (!creatingSession) newSession();
+		return;
+	}
+
+	freshDashboardSession = false;
+	deliverPrompt(trimmed, images, fromChat);
 }
 
 /* ── Event listeners ── */
@@ -1258,9 +1308,7 @@ chatInputEl.addEventListener("keydown", (e) => {
 chatInputEl.addEventListener("input", () => resizeTextarea(chatInputEl));
 
 $("nav-new-agent").addEventListener("click", () => {
-	setNavActive("new-agent");
-	showView("dashboard");
-	inputEl.focus();
+	startNewAgent();
 });
 
 $("nav-dashboard").addEventListener("click", () => {
