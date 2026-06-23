@@ -78,6 +78,16 @@ function toolNameFromRawInput(rawInput) {
 		if ("toolName" in rawInput) return prettifyToolName(rawInput.toolName);
 		if ("name" in rawInput) return prettifyToolName(rawInput.name);
 	}
+	if (typeof rawInput === "string") {
+		try {
+			const parsed = JSON.parse(rawInput);
+			if (parsed && typeof parsed === "object") {
+				return toolNameFromRawInput(parsed);
+			}
+		} catch {
+			// ignore invalid JSON
+		}
+	}
 	return undefined;
 }
 
@@ -86,12 +96,47 @@ function resolveToolName(update) {
 		update.title,
 		toolNameFromRawOutput(update.rawOutput),
 		toolNameFromRawInput(update.rawInput),
+		update.kind,
 	];
 	for (const candidate of candidates) {
 		const name = prettifyToolName(candidate);
 		if (name) return name;
 	}
-	return "tool";
+	return undefined;
+}
+
+function createToolCallTracker() {
+	const states = new Map();
+
+	return {
+		reset() {
+			states.clear();
+		},
+		merge(update) {
+			const id = update.toolCallId;
+			if (!id) return { id: undefined, name: undefined };
+
+			const state = states.get(id) ?? {
+				title: undefined,
+				rawInput: undefined,
+				rawOutput: undefined,
+				kind: undefined,
+			};
+
+			if (update.title) state.title = update.title;
+			if (update.rawInput != null) state.rawInput = update.rawInput;
+			if (update.rawOutput != null) state.rawOutput = update.rawOutput;
+			if (update.kind) state.kind = update.kind;
+
+			states.set(id, state);
+
+			return {
+				id,
+				name: resolveToolName(state),
+				state,
+			};
+		},
+	};
 }
 
 function isStartupInfo(text) {
@@ -204,7 +249,7 @@ function sendCommands(ws, commands) {
 	});
 }
 
-function forwardSessionUpdate(update, ws, { slimTools = false } = {}) {
+function forwardSessionUpdate(update, ws, { slimTools = false, toolTracker = null } = {}) {
 	switch (update.sessionUpdate) {
 		case "user_message_chunk":
 			if (update.content?.type === "text" && update.content.text) {
@@ -222,33 +267,31 @@ function forwardSessionUpdate(update, ws, { slimTools = false } = {}) {
 				sendJson(ws, { type: "thought", text: update.content.text });
 			}
 			break;
-		case "tool_call": {
-			const toolName = resolveToolName(update);
-			sendJson(ws, {
-				type: "tool",
-				event: "start",
+		case "tool_call":
+		case "tool_call_update": {
+			const merged = toolTracker?.merge(update) ?? {
 				id: update.toolCallId,
-				title: toolName,
-				toolName,
+				name: resolveToolName(update),
+			};
+			const payload = {
+				type: "tool",
+				event: update.sessionUpdate === "tool_call" ? "start" : "update",
+				id: merged.id ?? update.toolCallId,
 				status: update.status,
 				kind: update.kind,
-				rawInput: slimTools ? undefined : truncateWire(update.rawInput),
-				rawOutput: slimTools ? undefined : truncateWire(update.rawOutput),
-			});
-			break;
-		}
-		case "tool_call_update": {
-			const toolName = resolveToolName(update);
-			sendJson(ws, {
-				type: "tool",
-				event: "update",
-				id: update.toolCallId,
-				status: update.status,
-				title: toolName,
-				toolName,
-				rawInput: slimTools ? undefined : truncateWire(update.rawInput),
-				rawOutput: slimTools ? undefined : truncateWire(update.rawOutput),
-			});
+			};
+
+			if (merged.name) {
+				payload.title = merged.name;
+				payload.toolName = merged.name;
+			}
+
+			if (!slimTools) {
+				if (update.rawInput != null) payload.rawInput = truncateWire(update.rawInput);
+				if (update.rawOutput != null) payload.rawOutput = truncateWire(update.rawOutput);
+			}
+
+			sendJson(ws, payload);
 			break;
 		}
 		case "plan":
@@ -353,6 +396,7 @@ class PiSession {
 		this.pumpPromise = null;
 		this.replayHandler = null;
 		this.protocolVersion = null;
+		this.toolTracker = createToolCallTracker();
 	}
 
 	async start() {
@@ -419,11 +463,12 @@ class PiSession {
 		await this.disposeActiveSession();
 
 		sendJson(this.ws, { type: "clear" });
+		this.toolTracker.reset();
 
 		if (replay) {
 			sendJson(this.ws, { type: "status", state: "loading_history" });
 			this.replayHandler = (params) => {
-				forwardSessionUpdate(params.update, this.ws, { slimTools: true });
+				forwardSessionUpdate(params.update, this.ws, { toolTracker: this.toolTracker });
 			};
 		}
 
@@ -448,6 +493,7 @@ class PiSession {
 	async createSession() {
 		await this.disposeActiveSession();
 		sendJson(this.ws, { type: "clear" });
+		this.toolTracker.reset();
 		this.session = await this.ctx.buildSession(PI_CWD).start();
 		sendModelsFromConfigOptions(this.ws, this.session.newSessionResponse.configOptions);
 		this.pumpPromise = this.pumpUpdates();
@@ -506,7 +552,7 @@ class PiSession {
 			try {
 				const message = await activeSession.nextUpdate();
 				if (message.kind === "session_update") {
-					forwardSessionUpdate(message.update, this.ws);
+					forwardSessionUpdate(message.update, this.ws, { toolTracker: this.toolTracker });
 				} else if (message.kind === "stop") {
 					this.busy = false;
 					sendJson(this.ws, {

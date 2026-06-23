@@ -211,8 +211,25 @@ function normalizeToolName(name) {
 	return FRIENDLY_TOOL_NAMES[stripped] || stripped;
 }
 
+function isGenericToolName(name) {
+	return typeof name === "string" && name.trim().toLowerCase() === "tool";
+}
+
+function mergeToolName(current, incoming) {
+	if (!incoming) return current;
+	if (!isGenericToolName(incoming)) return incoming;
+	if (current && !isGenericToolName(current)) return current;
+	return incoming;
+}
+
 function resolveToolName(data) {
-	for (const candidate of [data.title, data.toolName, parseNameFromRaw(data.rawOutput), parseNameFromRaw(data.rawInput)]) {
+	for (const candidate of [
+		data.title,
+		data.toolName,
+		parseNameFromRaw(data.rawOutput),
+		parseNameFromRaw(data.rawInput),
+		data.kind,
+	]) {
 		const name = normalizeToolName(candidate);
 		if (name) return name;
 	}
@@ -982,7 +999,7 @@ function createToolCard(id) {
 	messagesEl.appendChild(card);
 	scrollToBottom();
 
-	const state = { el: card, title: null, toolName: null, rawInput: null, rawOutput: null, status: "running" };
+	const state = { el: card, title: null, toolName: null, kind: null, rawInput: null, rawOutput: null, status: "running" };
 	toolCards.set(id, state);
 	return state;
 }
@@ -994,8 +1011,9 @@ function updateToolCard(msg) {
 	let state = toolCards.get(id);
 	if (!state) state = createToolCard(id);
 
-	if (msg.title) state.title = msg.title;
-	if (msg.toolName) state.toolName = msg.toolName;
+	if (msg.title) state.title = mergeToolName(state.title, msg.title);
+	if (msg.toolName) state.toolName = mergeToolName(state.toolName, msg.toolName);
+	if (msg.kind) state.kind = msg.kind;
 	if (msg.rawInput != null) state.rawInput = msg.rawInput;
 	if (msg.rawOutput != null) state.rawOutput = msg.rawOutput;
 	if (msg.status != null) state.status = msg.status;
