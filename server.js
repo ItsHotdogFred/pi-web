@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { join, extname, basename } from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { Readable, Writable } from "node:stream";
 import { WebSocketServer } from "ws";
@@ -16,6 +17,8 @@ const PI_ACP_ARGS = process.env.PI_ACP_ARGS
 	? process.env.PI_ACP_ARGS.split(" ")
 	: ["-y", "pi-acp"];
 const PI_ACP_SHELL = process.env.PI_ACP_SHELL === "1" || (process.env.PI_ACP_SHELL !== "0" && process.platform === "win32");
+
+const execFileAsync = promisify(execFile);
 
 const MIME = {
 	".html": "text/html; charset=utf-8",
@@ -239,10 +242,50 @@ function pickMostRecentSession(sessions) {
 	});
 }
 
+async function gitBranch(cwd) {
+	try {
+		const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd });
+		return stdout.trim() || "master";
+	} catch {
+		return "master";
+	}
+}
+
+async function gitBranches(cwd) {
+	try {
+		const { stdout } = await execFileAsync("git", ["branch", "--format=%(refname:short)"], { cwd });
+		const branches = stdout
+			.split("\n")
+			.map((line) => line.trim())
+			.filter(Boolean);
+		return branches.length ? branches : ["master"];
+	} catch {
+		return ["master"];
+	}
+}
+
+async function serveGitInfo(req, res) {
+	try {
+		const branch = await gitBranch(PI_CWD);
+		const branches = await gitBranches(PI_CWD);
+		const project = basename(PI_CWD);
+		res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+		res.end(JSON.stringify({ project, branch, branches }));
+	} catch {
+		res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+		res.end(JSON.stringify({ project: basename(PI_CWD), branch: "master", branches: ["master"] }));
+	}
+}
+
 async function serveStatic(req, res) {
 	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 	let pathname = decodeURIComponent(url.pathname);
 	if (pathname === "/") pathname = "/index.html";
+
+	if (pathname === "/api/git") {
+		await serveGitInfo(req, res);
+		return;
+	}
 
 	if (pathname === "/marked.min.js") {
 		const markedPath = join(__dirname, "node_modules", "marked", "marked.min.js");
