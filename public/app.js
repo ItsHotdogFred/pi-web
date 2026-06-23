@@ -35,6 +35,7 @@ const attachBtnEl = $("attach-btn");
 const modelLabelEl = $("model-label");
 
 const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+const RECENT_PROJECTS_KEY = "pi-web-recent-projects";
 
 const SESSION_ACCENT_COLORS = ["branch-green", "branch-purple", "branch-orange"];
 
@@ -384,7 +385,84 @@ function setStatus(state, detail = "") {
 function setProjectName(path) {
 	cwd = path || "";
 	gitInfo.project = basename(path);
+	gitInfo.path = path || gitInfo.path;
 	syncGitContext();
+}
+
+function loadRecentProjects() {
+	try {
+		const stored = JSON.parse(localStorage.getItem(RECENT_PROJECTS_KEY) || "[]");
+		return Array.isArray(stored) ? stored.filter((entry) => typeof entry === "string" && entry.trim()) : [];
+	} catch {
+		return [];
+	}
+}
+
+function rememberProject(path) {
+	if (!path) return;
+	const recent = loadRecentProjects().filter((entry) => entry !== path);
+	recent.unshift(path);
+	localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(recent.slice(0, 8)));
+}
+
+function renderProjectMenu() {
+	const list = $("project-menu-list");
+	const pathInput = $("project-path-input");
+	if (!list) return;
+
+	list.replaceChildren();
+	const recent = loadRecentProjects();
+	const current = cwd || gitInfo.path;
+
+	if (pathInput && current) {
+		pathInput.placeholder = current;
+	}
+
+	if (recent.length === 0) {
+		const empty = document.createElement("p");
+		empty.className = "project-menu-empty";
+		empty.textContent = "No recent projects";
+		list.appendChild(empty);
+		return;
+	}
+
+	for (const path of recent) {
+		const btn = document.createElement("button");
+		btn.type = "button";
+		btn.className = "dropdown-item project-menu-item" + (path === current ? " selected" : "");
+		btn.innerHTML = `<span class="project-menu-name">${basename(path)}</span><span class="project-menu-path">${path}</span>`;
+		btn.addEventListener("click", () => chooseProject(path));
+		list.appendChild(btn);
+	}
+}
+
+function chooseProject(path) {
+	closeAllDropdowns();
+	if (!path || path === cwd) return;
+	sendProjectPath(path);
+}
+
+function sendProjectPath(path) {
+	const trimmed = path.trim();
+	if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN || busy) return;
+	ws.send(JSON.stringify({ type: "set_cwd", path: trimmed }));
+}
+
+function resetForProjectSwitch(nextCwd) {
+	sessionId = null;
+	sessions = [];
+	commands = [];
+	models = [];
+	currentModelId = null;
+	creatingSession = false;
+	awaitingNewAgentSession = false;
+	freshDashboardSession = false;
+	pendingDashboardPrompt = null;
+	clearChat();
+	showView("dashboard");
+	if (nextCwd) setProjectName(nextCwd);
+	renderSessions();
+	renderModelMenu();
 }
 
 function setBusy(nextBusy) {
@@ -495,24 +573,51 @@ function initDropdowns() {
 	});
 	$("chat-model-menu")?.addEventListener("click", (e) => e.stopPropagation());
 
+	$("project-trigger")?.addEventListener("click", (e) => {
+		e.stopPropagation();
+		const menu = $("project-menu");
+		const dropdown = $("project-dropdown");
+		if (!menu || !dropdown) return;
+		const wasOpen = !menu.classList.contains("hidden");
+		closeAllDropdowns();
+		if (!wasOpen) {
+			renderProjectMenu();
+			menu.classList.remove("hidden");
+			dropdown.classList.add("is-open");
+		}
+	});
+	$("project-menu")?.addEventListener("click", (e) => e.stopPropagation());
+	$("project-path-form")?.addEventListener("submit", (e) => {
+		e.preventDefault();
+		const input = $("project-path-input");
+		if (!input) return;
+		sendProjectPath(input.value);
+		input.value = "";
+	});
+
 	document.addEventListener("click", closeAllDropdowns);
 }
 
 function syncGitContext() {
-	projectNameEl.textContent = gitInfo.project || basename(cwd);
+	const name = gitInfo.project || basename(cwd);
+	projectNameEl.textContent = name;
+	$("project-trigger")?.setAttribute("title", cwd || gitInfo.path || name);
 	branchNameEl.textContent = gitInfo.branch || "master";
 }
 
-async function fetchGitInfo() {
+async function fetchGitInfo(projectPath = cwd) {
 	try {
-		const res = await fetch("/api/git");
+		const query = projectPath ? `?cwd=${encodeURIComponent(projectPath)}` : "";
+		const res = await fetch(`/api/git${query}`);
 		if (res.ok) {
 			gitInfo = await res.json();
+			if (gitInfo.path) setProjectName(gitInfo.path);
 		}
 	} catch {
 		// keep defaults
 	}
 	syncGitContext();
+	renderProjectMenu();
 }
 
 function openModelDropdown(scope = "dashboard") {
@@ -1140,6 +1245,16 @@ function connect() {
 				setCommands(msg.commands);
 				break;
 
+			case "project":
+				gitInfo = { ...gitInfo, ...msg };
+				if (msg.path) {
+					setProjectName(msg.path);
+					rememberProject(msg.path);
+				}
+				syncGitContext();
+				renderProjectMenu();
+				break;
+
 			case "session":
 				sessionId = msg.sessionId ?? null;
 				creatingSession = false;
@@ -1163,7 +1278,13 @@ function connect() {
 				break;
 
 			case "status":
-				if (msg.cwd) setProjectName(msg.cwd);
+				if (msg.cwd) {
+					if (gotReady && msg.cwd !== cwd && msg.state === "connecting") {
+						resetForProjectSwitch(msg.cwd);
+					} else {
+						setProjectName(msg.cwd);
+					}
+				}
 				if (msg.state === "ready") {
 					if (loadingHistory) {
 						flushUserMessage();
@@ -1176,6 +1297,7 @@ function connect() {
 					setStatus("ready");
 					setBusy(false);
 					sessionId = msg.sessionId ?? null;
+					if (cwd) rememberProject(cwd);
 					renderSessions();
 				} else if (msg.state === "busy") {
 					setStatus("busy");
@@ -1189,7 +1311,6 @@ function connect() {
 					startupBuffer = "";
 					startupSuppressed = false;
 					setStatus("connecting");
-					if (msg.cwd) setProjectName(msg.cwd);
 				} else if (msg.state === "error") {
 					setStatus("error", msg.message ?? "Error");
 				}

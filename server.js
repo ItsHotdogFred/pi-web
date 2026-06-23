@@ -1,7 +1,7 @@
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { readFile, writeFile } from "node:fs/promises";
-import { join, extname, basename } from "node:path";
+import { join, extname, basename, resolve } from "node:path";
+import { access, readFile, stat, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { Readable, Writable } from "node:stream";
@@ -11,7 +11,7 @@ import * as acp from "@agentclientprotocol/sdk";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(__dirname, "public");
 const PORT = Number(process.env.PORT || 3847);
-const PI_CWD = process.env.PI_CWD || process.cwd();
+const DEFAULT_CWD = process.env.PI_CWD || process.cwd();
 const PI_ACP_COMMAND = process.env.PI_ACP_COMMAND || "npx";
 const PI_ACP_ARGS = process.env.PI_ACP_ARGS
 	? process.env.PI_ACP_ARGS.split(" ")
@@ -143,9 +143,9 @@ function isStartupInfo(text) {
 	return typeof text === "string" && text.includes("## Skills") && text.includes("## Extensions");
 }
 
-function spawnPiAcp() {
+function spawnPiAcp(cwd) {
 	const child = spawn(PI_ACP_COMMAND, PI_ACP_ARGS, {
-		cwd: PI_CWD,
+		cwd,
 		stdio: ["pipe", "pipe", "pipe"],
 		env: process.env,
 		shell: PI_ACP_SHELL,
@@ -370,16 +370,50 @@ async function gitBranches(cwd) {
 	}
 }
 
+async function resolveProjectPath(input) {
+	if (!input || typeof input !== "string") {
+		throw new Error("Project path is required");
+	}
+
+	const trimmed = input.trim();
+	if (!trimmed) {
+		throw new Error("Project path is required");
+	}
+
+	const resolved = resolve(trimmed);
+	const info = await stat(resolved);
+	if (!info.isDirectory()) {
+		throw new Error("Project path must be a directory");
+	}
+
+	await access(resolved);
+	return resolved;
+}
+
+async function getGitInfo(cwd) {
+	const branch = await gitBranch(cwd);
+	const branches = await gitBranches(cwd);
+	return {
+		path: cwd,
+		project: basename(cwd),
+		branch,
+		branches,
+	};
+}
+
 async function serveGitInfo(req, res) {
+	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+	const requested = url.searchParams.get("cwd");
+
 	try {
-		const branch = await gitBranch(PI_CWD);
-		const branches = await gitBranches(PI_CWD);
-		const project = basename(PI_CWD);
+		const cwd = requested ? await resolveProjectPath(requested) : DEFAULT_CWD;
+		const info = await getGitInfo(cwd);
 		res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-		res.end(JSON.stringify({ project, branch, branches }));
-	} catch {
-		res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
-		res.end(JSON.stringify({ project: basename(PI_CWD), branch: "master", branches: ["master"] }));
+		res.end(JSON.stringify(info));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+		res.end(JSON.stringify({ message }));
 	}
 }
 
@@ -434,6 +468,7 @@ class PiSession {
 		this.replayHandler = null;
 		this.protocolVersion = null;
 		this.pendingModelId = null;
+		this.cwd = DEFAULT_CWD;
 		this.toolTracker = createToolCallTracker();
 	}
 
@@ -473,7 +508,7 @@ class PiSession {
 				try {
 					const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
 						sessionId,
-						cwd: PI_CWD,
+						cwd: this.cwd,
 						mcpServers: [],
 					});
 					sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
@@ -486,7 +521,7 @@ class PiSession {
 
 			let probe = null;
 			try {
-				probe = await this.ctx.buildSession(PI_CWD).start();
+				probe = await this.ctx.buildSession(this.cwd).start();
 				sendModelsFromConfigOptions(this.ws, probe.newSessionResponse.configOptions);
 				await this.drainProbeDefaults(probe);
 			} finally {
@@ -530,10 +565,31 @@ class PiSession {
 		}
 	}
 
-	async start() {
-		sendJson(this.ws, { type: "status", state: "connecting", cwd: PI_CWD });
+	async disconnectAgent() {
+		await this.disposeActiveSession();
+		this.replayHandler = null;
 
-		this.agentProcess = spawnPiAcp();
+		if (this.connection) {
+			this.connection.close();
+			this.connection = null;
+			this.ctx = null;
+		}
+
+		if (this.agentProcess && !this.agentProcess.killed) {
+			this.agentProcess.kill();
+			this.agentProcess = null;
+		}
+
+		await this.pumpPromise?.catch(() => {});
+		this.pumpPromise = null;
+		this.busy = false;
+		this.toolTracker.reset();
+	}
+
+	async connectAgent() {
+		sendJson(this.ws, { type: "status", state: "connecting", cwd: this.cwd });
+
+		this.agentProcess = spawnPiAcp(this.cwd);
 		const input = Writable.toWeb(this.agentProcess.stdin);
 		const output = Readable.toWeb(this.agentProcess.stdout);
 		const stream = acp.ndJsonStream(input, output);
@@ -542,32 +598,73 @@ class PiSession {
 		this.connection = app.connect(stream);
 		this.ctx = this.connection.agent;
 
-		try {
-			const init = await this.ctx.request(acp.methods.agent.initialize, {
-				protocolVersion: acp.PROTOCOL_VERSION,
-				clientCapabilities: {
-					fs: {
-						readTextFile: true,
-						writeTextFile: true,
-					},
+		const init = await this.ctx.request(acp.methods.agent.initialize, {
+			protocolVersion: acp.PROTOCOL_VERSION,
+			clientCapabilities: {
+				fs: {
+					readTextFile: true,
+					writeTextFile: true,
 				},
-			});
-			this.protocolVersion = init.protocolVersion;
+			},
+		});
+		this.protocolVersion = init.protocolVersion;
 
-			const listResponse = await this.ctx.request(acp.methods.agent.session.list, {
-				cwd: PI_CWD,
-			});
-			const sessions = listResponse.sessions ?? [];
-			sendJson(this.ws, { type: "sessions", sessions });
+		const listResponse = await this.ctx.request(acp.methods.agent.session.list, {
+			cwd: this.cwd,
+		});
+		const sessions = listResponse.sessions ?? [];
+		sendJson(this.ws, { type: "sessions", sessions });
 
-			await this.fetchAgentDefaults(sessions);
+		await this.fetchAgentDefaults(sessions);
+		this.sendReady();
+	}
 
-			// Stay on the dashboard until the user opens an existing session or starts a new one.
-			this.sendReady();
+	async start() {
+		try {
+			await this.connectAgent();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			sendJson(this.ws, { type: "status", state: "error", message });
 			throw error;
+		}
+	}
+
+	async setProjectPath(input) {
+		if (this.busy) {
+			sendJson(this.ws, { type: "error", message: "Pi is still working on the previous message" });
+			return;
+		}
+
+		let resolved;
+		try {
+			resolved = await resolveProjectPath(input);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			sendJson(this.ws, { type: "error", message });
+			return;
+		}
+
+		if (resolved === this.cwd) {
+			sendJson(this.ws, { type: "project", ...(await getGitInfo(this.cwd)) });
+			return;
+		}
+
+		this.cwd = resolved;
+		this.pendingModelId = null;
+
+		await this.disconnectAgent();
+
+		sendJson(this.ws, { type: "clear" });
+		sendJson(this.ws, { type: "sessions", sessions: [] });
+		sendJson(this.ws, { type: "commands", commands: [] });
+
+		try {
+			await this.connectAgent();
+			sendJson(this.ws, { type: "project", ...(await getGitInfo(this.cwd)) });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			sendJson(this.ws, { type: "error", message });
+			sendJson(this.ws, { type: "status", state: "error", message });
 		}
 	}
 
@@ -577,7 +674,7 @@ class PiSession {
 			state: "ready",
 			sessionId: this.session?.sessionId,
 			protocolVersion: this.protocolVersion,
-			cwd: PI_CWD,
+			cwd: this.cwd,
 		});
 	}
 
@@ -608,7 +705,7 @@ class PiSession {
 		try {
 			const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
 				sessionId,
-				cwd: PI_CWD,
+				cwd: this.cwd,
 				mcpServers: [],
 			});
 			sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
@@ -629,7 +726,7 @@ class PiSession {
 		await this.disposeActiveSession();
 		sendJson(this.ws, { type: "clear" });
 		this.toolTracker.reset();
-		this.session = await this.ctx.buildSession(PI_CWD).start();
+		this.session = await this.ctx.buildSession(this.cwd).start();
 		sendModelsFromConfigOptions(this.ws, this.session.newSessionResponse.configOptions);
 		this.pumpPromise = this.pumpUpdates();
 		await this.applyPendingModel();
@@ -640,7 +737,7 @@ class PiSession {
 	async refreshSessions() {
 		try {
 			const listResponse = await this.ctx.request(acp.methods.agent.session.list, {
-				cwd: PI_CWD,
+				cwd: this.cwd,
 			});
 			sendJson(this.ws, { type: "sessions", sessions: listResponse.sessions ?? [] });
 		} catch {
@@ -793,22 +890,7 @@ class PiSession {
 
 	async close() {
 		this.closed = true;
-		this.replayHandler = null;
-
-		if (this.session) {
-			this.session.dispose();
-			this.session = null;
-		}
-
-		if (this.connection) {
-			this.connection.close();
-		}
-
-		if (this.agentProcess && !this.agentProcess.killed) {
-			this.agentProcess.kill();
-		}
-
-		await this.pumpPromise?.catch(() => {});
+		await this.disconnectAgent();
 	}
 }
 
@@ -844,6 +926,8 @@ async function handleWebSocket(ws) {
 			await pi.newSession();
 		} else if (msg.type === "set_model") {
 			await pi.setModel(msg.value);
+		} else if (msg.type === "set_cwd") {
+			await pi.setProjectPath(msg.path ?? msg.cwd ?? "");
 		}
 	});
 
@@ -871,6 +955,6 @@ server.on("error", (err) => {
 
 server.listen(PORT, () => {
 	console.log(`pi-web listening on http://localhost:${PORT}`);
-	console.log(`project cwd: ${PI_CWD}`);
+	console.log(`default project cwd: ${DEFAULT_CWD}`);
 	console.log(`pi-acp: ${PI_ACP_COMMAND} ${PI_ACP_ARGS.join(" ")}`);
 });

@@ -57,7 +57,33 @@
 				<div class="view view-dashboard" id="dashboard-view">
 					<header class="page-header">
 						<div class="context-chips" aria-label="Project context">
-							<span class="context-chip" id="project-name">pi-web</span>
+							<div class="dropdown" id="project-dropdown">
+								<button type="button" class="context-chip context-chip-button dropdown-trigger" id="project-trigger" aria-haspopup="listbox" title="Switch project">
+									<span id="project-name">pi-web</span>
+									<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+										<path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+									</svg>
+								</button>
+								<div class="dropdown-menu project-menu hidden" id="project-menu" role="listbox">
+									<div class="project-menu-section">
+										<span class="project-menu-label">Recent</span>
+										<div class="project-menu-list" id="project-menu-list"></div>
+									</div>
+									<form class="project-menu-form" id="project-path-form">
+										<label class="project-menu-label" for="project-path-input">Open folder</label>
+										<div class="project-menu-input-row">
+											<input
+												type="text"
+												id="project-path-input"
+												placeholder="/absolute/path/to/project"
+												autocomplete="off"
+												spellcheck="false"
+											/>
+											<button type="submit" class="project-menu-open">Open</button>
+										</div>
+									</form>
+								</div>
+							</div>
 							<span class="context-chip context-chip-branch">
 								<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 									<circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.1" />

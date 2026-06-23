@@ -65,6 +65,8 @@ Client → server:
 { "type": "cancel" }
 { "type": "switch_session", "sessionId": "..." }
 { "type": "new_session" }
+{ "type": "set_model", "value": "..." }
+{ "type": "set_cwd", "path": "/absolute/path/to/project" }
 ```
 
 Server → client (subset):
@@ -72,6 +74,7 @@ Server → client (subset):
 ```json
 { "type": "sessions", "sessions": [{ "sessionId": "...", "title": "...", "updatedAt": "..." }] }
 { "type": "status", "state": "ready", "sessionId": "...", "cwd": "..." }
+{ "type": "project", "path": "/absolute/path", "project": "my-app", "branch": "master", "branches": ["master"] }
 { "type": "chunk", "text": "Hello" }
 { "type": "tool", "event": "start", "title": "read", "toolName": "read", "status": "pending" }
 { "type": "done", "stopReason": "end_turn" }
@@ -89,6 +92,7 @@ Uses Node's `--watch` flag to restart the bridge on file changes.
 ## Notes
 
 - Session sidebar lists Pi sessions for the current project; switch or start new chats from the UI.
+- Click the project name in the header to switch folders (recent paths + manual path entry).
 - Tool permissions are auto-approved for the prototype.
 
 ## License
