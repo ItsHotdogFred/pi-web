@@ -56,6 +56,7 @@
 						</div>
 						<h1 class="welcome-heading">What can I help you build today?</h1>
 						<p class="welcome-sub">Ask Pi to explore, edit, or improve your project.</p>
+						<button type="button" class="welcome-start-btn" id="welcome-start">Start typing…</button>
 						<div class="quick-actions">
 							<button type="button" class="quick-action" data-prompt="Explain this codebase — structure, key files, and how things fit together.">
 								<span class="quick-action-icon" aria-hidden="true">🔍</span>
@@ -85,24 +86,42 @@
 
 				<form class="composer" id="composer">
 					<div class="composer-inner">
-						<textarea
-							id="input"
-							rows="1"
-							placeholder="Ask Pi anything… (Enter to send, Shift+Enter for newline)"
-							autocomplete="off"
-							spellcheck="true"
-						></textarea>
-						<div class="composer-actions">
-							<button type="button" id="cancel" class="btn btn-stop" disabled aria-label="Stop">
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-									<rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" />
-								</svg>
-							</button>
-							<button type="submit" id="send" class="btn btn-send" disabled aria-label="Send">
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-									<path d="M8 14V3M8 3l-4 4M8 3l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-								</svg>
-							</button>
+						<div class="composer-attachments" id="attachments" aria-label="Attached images"></div>
+						<div class="composer-input-row">
+							<textarea
+								id="input"
+								rows="1"
+								placeholder="Ask Pi anything… (Enter to send, Shift+Enter for newline)"
+								autocomplete="off"
+								spellcheck="true"
+							></textarea>
+							<div class="composer-actions">
+								<button type="button" id="cancel" class="btn btn-stop" disabled aria-label="Stop">
+									<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+										<rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" />
+									</svg>
+								</button>
+								<button type="submit" id="send" class="btn btn-send" disabled aria-label="Send">
+									<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+										<path d="M8 14V3M8 3l-4 4M8 3l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+									</svg>
+								</button>
+							</div>
+						</div>
+						<div class="composer-footer">
+							<div class="composer-footer-left">
+								<span class="composer-model-label">Pi</span>
+							</div>
+							<div class="composer-actions">
+								<input type="file" id="image-input" accept="image/*" multiple hidden />
+								<button type="button" id="attach-image" class="btn btn-attach" aria-label="Attach image">
+									<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+										<rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.25" />
+										<circle cx="5.5" cy="6.5" r="1" fill="currentColor" />
+										<path d="M2 11l3.5-3.5 2 2L11 6l3 3" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" />
+									</svg>
+								</button>
+							</div>
 						</div>
 					</div>
 				</form>

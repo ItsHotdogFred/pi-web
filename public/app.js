@@ -12,6 +12,10 @@ const cancelEl = document.getElementById("cancel");
 const newChatEl = document.getElementById("new-chat");
 const sidebarEl = document.getElementById("sidebar");
 const sidebarToggleEl = document.getElementById("sidebar-toggle");
+const attachmentsEl = document.getElementById("attachments");
+const imageInputEl = document.getElementById("image-input");
+const attachImageEl = document.getElementById("attach-image");
+const welcomeStartEl = document.getElementById("welcome-start");
 
 const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 
@@ -21,6 +25,7 @@ let lastError = "";
 let cwd = "";
 let sessionId = null;
 let sessions = [];
+let pendingAttachments = [];
 
 let assistantBlock = null;
 let assistantText = "";
@@ -54,15 +59,54 @@ function formatRelativeTime(iso) {
 	return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function renderMarkdown(text) {
-	if (window.marked?.parse) {
-		return window.marked.parse(text, { breaks: true });
-	}
+function escapeHtml(text) {
 	return text
 		.replaceAll("&", "&amp;")
 		.replaceAll("<", "&lt;")
 		.replaceAll(">", "&gt;")
-		.replaceAll("\n", "<br>");
+		.replaceAll('"', "&quot;");
+}
+
+function colorizeDiffText(text) {
+	return text.split("\n").map((line) => {
+		const escaped = escapeHtml(line);
+		if (line.startsWith("+") && !line.startsWith("+++")) {
+			return `<span class="diff-line-add">${escaped}</span>`;
+		}
+		if (line.startsWith("-") && !line.startsWith("---")) {
+			return `<span class="diff-line-remove">${escaped}</span>`;
+		}
+		return escaped;
+	}).join("\n");
+}
+
+function enhanceDiffBlocks(root) {
+	if (!root) return;
+	root.querySelectorAll("pre").forEach((pre) => {
+		if (pre.dataset.diffEnhanced === "1") return;
+		const text = pre.textContent ?? "";
+		if (!/^[-+]/m.test(text)) return;
+		pre.innerHTML = colorizeDiffText(text);
+		pre.classList.add("diff-block");
+		pre.dataset.diffEnhanced = "1";
+	});
+}
+
+function renderMarkdown(text) {
+	let html;
+	if (window.marked?.parse) {
+		html = window.marked.parse(text, { breaks: true });
+	} else {
+		html = text
+			.replaceAll("&", "&amp;")
+			.replaceAll("<", "&lt;")
+			.replaceAll(">", "&gt;")
+			.replaceAll("\n", "<br>");
+	}
+	const container = document.createElement("div");
+	container.innerHTML = html;
+	enhanceDiffBlocks(container);
+	return container.innerHTML;
 }
 
 function formatRaw(value) {
@@ -171,6 +215,18 @@ function updateWelcomeVisibility() {
 	document.body.classList.toggle("has-messages", hasMessages);
 	const chatArea = document.getElementById("chat-area");
 	if (chatArea) chatArea.classList.toggle("has-messages", hasMessages);
+	updateComposerVisibility();
+}
+
+function updateComposerVisibility() {
+	const hasMessages = messagesEl.children.length > 0;
+	const showComposer = hasMessages || formEl.classList.contains("visible");
+	formEl.classList.toggle("visible", showComposer);
+}
+
+function showComposer() {
+	formEl.classList.add("visible");
+	inputEl.focus();
 }
 
 /* ── Status & controls ── */
@@ -199,9 +255,11 @@ function setProjectName(path) {
 function setBusy(nextBusy) {
 	busy = nextBusy;
 	const connected = ws && ws.readyState === WebSocket.OPEN;
-	sendEl.disabled = !connected || busy;
+	const canSend = connected && !busy && (inputEl.value.trim() || pendingAttachments.length > 0);
+	sendEl.disabled = !canSend;
 	cancelEl.disabled = !busy;
 	inputEl.disabled = !connected;
+	attachImageEl.disabled = !connected;
 }
 
 function resizeTextarea() {
@@ -276,14 +334,24 @@ function newSession() {
 function clearChat() {
 	messagesEl.replaceChildren();
 	toolCards.clear();
+	pendingAttachments = [];
+	renderAttachmentPreviews();
+	formEl.classList.remove("visible");
+	inputEl.value = "";
+	resizeTextarea();
 	finalizeAssistantTurn();
 	updateWelcomeVisibility();
 }
 
-function addUserMessage(text) {
+function addUserMessage(text, attachments = []) {
 	const article = document.createElement("article");
 	article.className = "msg msg-user";
-	article.innerHTML = `<div class="msg-content">${renderMarkdown(text)}</div>`;
+	let html = "";
+	for (const attachment of attachments) {
+		html += `<img class="msg-image" src="${attachment.dataUrl}" alt="${escapeHtml(attachment.name)}">`;
+	}
+	if (text) html += renderMarkdown(text);
+	article.innerHTML = `<div class="msg-content">${html}</div>`;
 	messagesEl.appendChild(article);
 	updateWelcomeVisibility();
 	scrollToBottom();
@@ -407,7 +475,7 @@ function updateToolCard(msg) {
 	const outputText = formatRaw(state.rawOutput);
 
 	if (inputText) {
-		inputPre.textContent = inputText;
+		inputPre.innerHTML = colorizeDiffText(inputText);
 		inputPre.style.display = "";
 		inputSection.querySelector(".tool-section-label").style.display = "";
 	} else {
@@ -417,7 +485,7 @@ function updateToolCard(msg) {
 	}
 
 	if (outputText) {
-		outputPre.textContent = outputText;
+		outputPre.innerHTML = colorizeDiffText(outputText);
 		outputPre.style.display = "";
 		outputSection.querySelector(".tool-section-label").style.display = "";
 	} else {
@@ -565,16 +633,73 @@ function connect() {
 	});
 }
 
+/* ── Image attachments ── */
+
+function renderAttachmentPreviews() {
+	attachmentsEl.replaceChildren();
+	for (const [index, attachment] of pendingAttachments.entries()) {
+		const wrap = document.createElement("div");
+		wrap.className = "attachment-preview";
+
+		const img = document.createElement("img");
+		img.src = attachment.dataUrl;
+		img.alt = attachment.name;
+
+		const removeBtn = document.createElement("button");
+		removeBtn.type = "button";
+		removeBtn.className = "attachment-remove";
+		removeBtn.setAttribute("aria-label", `Remove ${attachment.name}`);
+		removeBtn.textContent = "×";
+		removeBtn.addEventListener("click", () => {
+			pendingAttachments.splice(index, 1);
+			renderAttachmentPreviews();
+			setBusy(busy);
+		});
+
+		wrap.append(img, removeBtn);
+		attachmentsEl.appendChild(wrap);
+	}
+	setBusy(busy);
+}
+
+function addImageAttachment(file) {
+	if (!file || !file.type.startsWith("image/")) return;
+	const reader = new FileReader();
+	reader.onload = () => {
+		pendingAttachments.push({
+			name: file.name || "image",
+			dataUrl: reader.result,
+			type: file.type,
+		});
+		renderAttachmentPreviews();
+		showComposer();
+	};
+	reader.readAsDataURL(file);
+}
+
+function buildPromptText(text, attachments) {
+	const trimmed = text.trim();
+	if (!attachments.length) return trimmed;
+	const imageMarkdown = attachments
+		.map((attachment) => `![${attachment.name}](${attachment.dataUrl})`)
+		.join("\n");
+	if (!trimmed) return imageMarkdown;
+	return `${trimmed}\n\n${imageMarkdown}`;
+}
+
 /* ── Send prompt ── */
 
 function sendPrompt(text) {
 	const trimmed = text.trim();
-	if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN || busy) return;
+	if ((!trimmed && pendingAttachments.length === 0) || !ws || ws.readyState !== WebSocket.OPEN || busy) return;
 
-	addUserMessage(trimmed);
+	const attachments = [...pendingAttachments];
+	addUserMessage(trimmed, attachments);
 	inputEl.value = "";
+	pendingAttachments = [];
+	renderAttachmentPreviews();
 	resizeTextarea();
-	ws.send(JSON.stringify({ type: "prompt", text: trimmed }));
+	ws.send(JSON.stringify({ type: "prompt", text: buildPromptText(trimmed, attachments) }));
 }
 
 formEl.addEventListener("submit", (event) => {
@@ -594,7 +719,39 @@ inputEl.addEventListener("keydown", (event) => {
 	}
 });
 
-inputEl.addEventListener("input", resizeTextarea);
+inputEl.addEventListener("input", () => {
+	resizeTextarea();
+	setBusy(busy);
+});
+
+attachImageEl.addEventListener("click", () => {
+	imageInputEl.click();
+});
+
+imageInputEl.addEventListener("change", () => {
+	for (const file of imageInputEl.files ?? []) {
+		addImageAttachment(file);
+	}
+	imageInputEl.value = "";
+});
+
+inputEl.addEventListener("paste", (event) => {
+	const items = event.clipboardData?.items;
+	if (!items) return;
+	let hasImage = false;
+	for (const item of items) {
+		if (item.type.startsWith("image/")) {
+			hasImage = true;
+			const file = item.getAsFile();
+			if (file) addImageAttachment(file);
+		}
+	}
+	if (hasImage) event.preventDefault();
+});
+
+welcomeStartEl?.addEventListener("click", () => {
+	showComposer();
+});
 
 newChatEl.addEventListener("click", newSession);
 
@@ -606,8 +763,7 @@ document.querySelectorAll(".quick-action").forEach((btn) => {
 	btn.addEventListener("click", () => {
 		const prompt = btn.dataset.prompt;
 		if (prompt) {
-			inputEl.value = prompt;
-			resizeTextarea();
+			showComposer();
 			sendPrompt(prompt);
 		}
 	});
