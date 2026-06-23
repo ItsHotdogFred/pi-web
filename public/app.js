@@ -1,4 +1,4 @@
-/* pi-web — Cursor-style dashboard */
+/* pi-web — browser dashboard for Pi */
 
 const $ = (id) => document.getElementById(id);
 
@@ -18,7 +18,6 @@ const sendEl = $("send");
 const chatComposerEl = $("chat-composer");
 const chatInputEl = $("chat-input");
 const cancelEl = $("cancel");
-const chatMicBtnEl = $("chat-mic-btn");
 const fileContextEl = $("file-context");
 const sidebarEl = $("sidebar");
 const sidebarToggleEl = $("sidebar-toggle");
@@ -57,7 +56,7 @@ let gitInfo = { branch: "master", branches: ["master"], project: "pi-web" };
 let lastPrompt = "";
 let fileContextCollapsed = false;
 
-const changedFiles = new Map();
+const changedFiles = new Set();
 
 const LANG_TAGS = {
 	js: "JS",
@@ -384,9 +383,8 @@ function setStatus(state, detail = "") {
 
 function setProjectName(path) {
 	cwd = path || "";
-	const name = basename(path);
-	projectNameEl.textContent = name;
-	gitInfo.project = name;
+	gitInfo.project = basename(path);
+	syncGitContext();
 }
 
 function setBusy(nextBusy) {
@@ -398,7 +396,6 @@ function setBusy(nextBusy) {
 	inputEl.disabled = !connected;
 	chatInputEl.disabled = !connected;
 	sendEl.classList.toggle("hidden", !canSendDashboard);
-	chatMicBtnEl?.classList.toggle("hidden", busy);
 	cancelEl?.classList.toggle("hidden", !busy);
 }
 
@@ -482,40 +479,40 @@ function closeAllDropdowns() {
 	}
 }
 
-function setupDropdown(triggerId, menuId) {
-	const trigger = $(triggerId);
-	const menu = $(menuId);
-	if (!trigger || !menu) return;
+function initDropdowns() {
+	setupModelSearch();
+	renderModelMenu();
 
-	const dropdown = trigger.closest(".dropdown");
-
-	trigger.addEventListener("click", (e) => {
+	$("model-trigger")?.addEventListener("click", (e) => {
 		e.stopPropagation();
-		const wasOpen = !menu.classList.contains("hidden");
-		closeAllDropdowns();
-		if (!wasOpen) {
-			menu.classList.remove("hidden");
-			dropdown?.classList.add("is-open");
-		}
+		openModelDropdown("dashboard");
 	});
+	$("model-menu")?.addEventListener("click", (e) => e.stopPropagation());
 
-	menu.addEventListener("click", (e) => e.stopPropagation());
+	$("chat-model-trigger")?.addEventListener("click", (e) => {
+		e.stopPropagation();
+		openModelDropdown("chat");
+	});
+	$("chat-model-menu")?.addEventListener("click", (e) => e.stopPropagation());
+
+	document.addEventListener("click", closeAllDropdowns);
 }
 
-function renderDropdownMenu(menuId, items, selected, onSelect) {
-	const menu = $(menuId);
-	menu.replaceChildren();
-	for (const item of items) {
-		const btn = document.createElement("button");
-		btn.type = "button";
-		btn.className = "dropdown-item" + (item === selected ? " selected" : "");
-		btn.textContent = item;
-		btn.addEventListener("click", () => {
-			onSelect(item);
-			closeAllDropdowns();
-		});
-		menu.appendChild(btn);
+function syncGitContext() {
+	projectNameEl.textContent = gitInfo.project || basename(cwd);
+	branchNameEl.textContent = gitInfo.branch || "master";
+}
+
+async function fetchGitInfo() {
+	try {
+		const res = await fetch("/api/git");
+		if (res.ok) {
+			gitInfo = await res.json();
+		}
+	} catch {
+		// keep defaults
 	}
+	syncGitContext();
 }
 
 function openModelDropdown(scope = "dashboard") {
@@ -621,52 +618,6 @@ function setModels(payload) {
 	renderSessions();
 }
 
-function initDropdowns() {
-	setupModelSearch();
-	renderModelMenu();
-
-	$("model-trigger")?.addEventListener("click", (e) => {
-		e.stopPropagation();
-		openModelDropdown("dashboard");
-	});
-	$("model-menu")?.addEventListener("click", (e) => e.stopPropagation());
-
-	$("chat-model-trigger")?.addEventListener("click", (e) => {
-		e.stopPropagation();
-		openModelDropdown("chat");
-	});
-	$("chat-model-menu")?.addEventListener("click", (e) => e.stopPropagation());
-
-	setupDropdown("project-trigger", "project-menu");
-	setupDropdown("branch-trigger", "branch-menu");
-
-	document.addEventListener("click", closeAllDropdowns);
-}
-
-function updateGitDropdowns() {
-	renderDropdownMenu("branch-menu", gitInfo.branches, gitInfo.branch, (branch) => {
-		gitInfo.branch = branch;
-		branchNameEl.textContent = branch;
-	});
-
-	const projects = [gitInfo.project];
-	renderDropdownMenu("project-menu", projects, gitInfo.project, () => {});
-	branchNameEl.textContent = gitInfo.branch;
-}
-
-async function fetchGitInfo() {
-	try {
-		const res = await fetch("/api/git");
-		if (res.ok) {
-			gitInfo = await res.json();
-			projectNameEl.textContent = gitInfo.project || basename(cwd);
-			updateGitDropdowns();
-		}
-	} catch {
-		updateGitDropdowns();
-	}
-}
-
 /* ── Today sidebar & activity feed ── */
 
 function sessionIconSvg(colorClass) {
@@ -724,10 +675,7 @@ function renderActivityCardLeft(session, status, isRunning) {
 		const preview = lastPrompt || sessionTitle(session);
 		const lines = preview.split("\n").slice(0, 2);
 		left.innerHTML = lines
-			.map((line, index) => {
-				const prefix = index === 0 ? '<span class="code-prompt">$</span> ' : "";
-				return `<div class="code-line">${prefix}${line.trim()}</div>`;
-			})
+			.map((line) => `<div class="code-line">${line.trim()}</div>`)
 			.join("");
 		return left;
 	}
@@ -786,7 +734,7 @@ function renderActivityFeed() {
 
 		const subtitle = document.createElement("span");
 		subtitle.className = "activity-card-subtitle";
-		subtitle.textContent = `${currentModelLabel()} · ${sessionProjectName(session)}`;
+		subtitle.textContent = sessionProjectName(session);
 
 		right.append(title, subtitle);
 		card.append(left, right);
@@ -871,12 +819,6 @@ function extractFilePath(payload) {
 	return payload.path || payload.file_path || payload.filePath || payload.file || payload.target || null;
 }
 
-function estimateLineDiff(content) {
-	if (!content || typeof content !== "string") return { add: 12, del: 3 };
-	const lines = content.split("\n").length;
-	return { add: Math.max(lines, 1), del: Math.max(Math.floor(lines * 0.15), 1) };
-}
-
 function trackFileFromTool(state) {
 	const toolName = resolveToolName(state).toLowerCase();
 	if (!/(write|edit|patch|replace|create|fs)/.test(toolName)) return;
@@ -885,18 +827,7 @@ function trackFileFromTool(state) {
 	const path = extractFilePath(payload);
 	if (!path) return;
 
-	const content =
-		payload?.content || payload?.new_string || payload?.newString || payload?.text || payload?.contents || "";
-	const diff = estimateLineDiff(typeof content === "string" ? content : JSON.stringify(content));
-	const existing = changedFiles.get(path);
-
-	if (existing) {
-		existing.additions += diff.add;
-		existing.deletions += diff.del;
-	} else {
-		changedFiles.set(path, { path, additions: diff.add, deletions: diff.del });
-	}
-
+	changedFiles.add(path);
 	renderFileContext();
 }
 
@@ -905,7 +836,7 @@ function renderFileContext() {
 	const listEl = $("file-context-list");
 	if (!fileContextEl || !countEl || !listEl) return;
 
-	const files = [...changedFiles.values()].sort((a, b) => a.path.localeCompare(b.path));
+	const files = [...changedFiles].sort((a, b) => a.localeCompare(b));
 	if (files.length === 0) {
 		fileContextEl.classList.add("hidden");
 		return;
@@ -914,20 +845,16 @@ function renderFileContext() {
 	fileContextEl.classList.remove("hidden");
 	fileContextEl.classList.toggle("collapsed", fileContextCollapsed);
 	$("file-context-toggle")?.setAttribute("aria-expanded", String(!fileContextCollapsed));
-	countEl.textContent = `${files.length} File${files.length === 1 ? "" : "s"} Changed`;
+	countEl.textContent = `${files.length} File${files.length === 1 ? "" : "s"} Touched`;
 
 	listEl.replaceChildren();
-	for (const file of files) {
+	for (const path of files) {
 		const li = document.createElement("li");
 		li.className = "file-context-item";
 		li.innerHTML = `
 			<span class="file-context-file">
-				<span class="file-context-lang">${fileLangTag(file.path)}</span>
-				<span class="file-context-name">${basename(file.path)}</span>
-			</span>
-			<span class="file-context-diff">
-				<span class="diff-add">+${file.additions}</span>
-				<span class="diff-del">-${file.deletions}</span>
+				<span class="file-context-lang">${fileLangTag(path)}</span>
+				<span class="file-context-name" title="${path}">${basename(path)}</span>
 			</span>`;
 		listEl.appendChild(li);
 	}
@@ -1160,6 +1087,9 @@ function renderCommandsList(filter) {
 function setCommands(nextCommands) {
 	commands = Array.isArray(nextCommands) ? nextCommands : [];
 	if (!inlineCommandsEl.classList.contains("hidden")) updateInlineCommands();
+	if (!commandsOverlayEl.classList.contains("hidden")) {
+		renderCommandsList(commandsInputEl.value);
+	}
 }
 
 /* ── WebSocket ── */

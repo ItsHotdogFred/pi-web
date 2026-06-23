@@ -287,10 +287,27 @@ input {
 	flex-shrink: 0;
 }
 
-.selectors {
+.selectors,
+.context-chips {
 	display: flex;
 	align-items: center;
 	gap: 0.75rem;
+}
+
+.context-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0.35rem 0.55rem;
+	border-radius: 6px;
+	background: rgba(255, 255, 255, 0.04);
+	color: var(--text);
+	font-size: 0.9rem;
+	font-weight: 500;
+}
+
+.context-chip-branch {
+	color: var(--muted);
 }
 
 .dropdown {
@@ -556,18 +573,6 @@ input {
 	color: var(--muted);
 }
 
-.mic-btn {
-	width: 2.25rem;
-	height: 2.25rem;
-	border-radius: 50%;
-	border: 1px solid var(--border);
-}
-
-.mic-btn:hover {
-	border-color: #333;
-	color: var(--text);
-}
-
 .home-composer {
 	background: #121212;
 }
@@ -659,16 +664,9 @@ input {
 	object-fit: cover;
 }
 
-.today-item-meta .diff-add,
-.file-context-diff .diff-add {
-	color: #3ecf8e;
-	font-weight: 500;
-}
-
-.today-item-meta .diff-del,
-.file-context-diff .diff-del {
-	color: #f87171;
-	font-weight: 500;
+.today-item-meta {
+	color: var(--muted);
+	font-size: 0.72rem;
 }
 
 /* ── Commands hint ── */
@@ -840,10 +838,6 @@ input {
 	white-space: nowrap;
 }
 
-.activity-card-left.code-preview .code-prompt {
-	color: var(--green);
-}
-
 .activity-card-meta {
 	display: flex;
 	flex-direction: column;
@@ -862,16 +856,6 @@ input {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-}
-
-.diff-add {
-	color: #3ecf8e;
-	font-weight: 500;
-}
-
-.diff-del {
-	color: #f87171;
-	font-weight: 500;
 }
 
 .activity-badge {
@@ -1307,28 +1291,8 @@ input {
 	font-size: 0.78rem;
 }
 
-.file-context-diff {
-	display: flex;
-	gap: 0.35rem;
-	flex-shrink: 0;
-	font-family: ui-monospace, "SF Mono", Menlo, monospace;
-	font-size: 0.75rem;
-}
-
 .chat-composer-box textarea {
 	min-height: 3.5rem;
-}
-
-.chat-composer-box .chat-mic-btn {
-	background: #fff;
-	color: #000;
-	border-color: #fff;
-}
-
-.chat-composer-box .chat-mic-btn:hover {
-	background: #e8e8e8;
-	border-color: #e8e8e8;
-	color: #000;
 }
 
 .chat-composer-box .btn-stop {
