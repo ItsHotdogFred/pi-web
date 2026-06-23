@@ -97,6 +97,8 @@ const chatAttachments = [];
 
 let assistantBlock = null;
 let assistantText = "";
+let thoughtBlock = null;
+let thoughtText = "";
 const toolCards = new Map();
 let connectionState = "connecting";
 let gotReady = false;
@@ -894,6 +896,25 @@ function addSystemMessage(kind, label, html) {
 	return article;
 }
 
+function ensureThoughtBlock() {
+	if (thoughtBlock) return thoughtBlock;
+	thoughtBlock = addSystemMessage("thought", "Thinking", "");
+	thoughtText = "";
+	return thoughtBlock;
+}
+
+function appendThoughtChunk(text) {
+	const block = ensureThoughtBlock();
+	thoughtText += text;
+	block.querySelector(".msg-content").innerHTML = renderMarkdown(thoughtText);
+	scrollToBottom();
+}
+
+function finalizeThoughtBlock() {
+	thoughtBlock = null;
+	thoughtText = "";
+}
+
 function ensureAssistantBlock() {
 	if (assistantBlock) return assistantBlock;
 	assistantBlock = addSystemMessage("assistant", "", "");
@@ -909,6 +930,7 @@ function appendAssistantChunk(text) {
 }
 
 function finalizeAssistantTurn() {
+	finalizeThoughtBlock();
 	assistantBlock = null;
 	assistantText = "";
 }
@@ -1144,10 +1166,8 @@ function connect() {
 			}
 
 			case "thought": {
-				const thoughtText = msg.text ?? "";
-				if (!shouldSkipStartupContent(thoughtText)) {
-					addSystemMessage("thought", "Thinking", renderMarkdown(thoughtText));
-				}
+				const chunkText = msg.text ?? "";
+				if (!shouldSkipStartupContent(chunkText)) appendThoughtChunk(chunkText);
 				break;
 			}
 
