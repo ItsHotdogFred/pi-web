@@ -538,7 +538,7 @@ class PiSession {
 		}
 	}
 
-	async handlePrompt(text) {
+	async handlePrompt(text, images = []) {
 		if (!this.session) {
 			sendJson(this.ws, { type: "error", message: "Session not ready" });
 			return;
@@ -548,14 +548,30 @@ class PiSession {
 			return;
 		}
 
-		const trimmed = text.trim();
-		if (!trimmed) return;
+		const trimmed = (text ?? "").trim();
+		const imageBlocks = Array.isArray(images)
+			? images.filter((image) => image?.data && image?.mimeType)
+			: [];
+
+		if (!trimmed && imageBlocks.length === 0) return;
 
 		this.busy = true;
 		sendJson(this.ws, { type: "status", state: "busy" });
 
 		try {
-			await this.session.prompt(trimmed);
+			const prompt =
+				imageBlocks.length === 0
+					? trimmed
+					: [
+							...(trimmed ? [{ type: "text", text: trimmed }] : []),
+							...imageBlocks.map((image) => ({
+								type: "image",
+								mimeType: image.mimeType,
+								data: image.data,
+							})),
+						];
+
+			await this.session.prompt(prompt);
 			void this.refreshSessions();
 		} catch (error) {
 			this.busy = false;
@@ -644,7 +660,7 @@ async function handleWebSocket(ws) {
 		}
 
 		if (msg.type === "prompt") {
-			await pi.handlePrompt(msg.text ?? "");
+			await pi.handlePrompt(msg.text ?? "", msg.images ?? []);
 		} else if (msg.type === "cancel") {
 			await pi.cancel();
 		} else if (msg.type === "switch_session") {

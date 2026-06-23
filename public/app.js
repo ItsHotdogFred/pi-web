@@ -37,7 +37,6 @@ const modelLabelEl = $("model-label");
 
 const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 
-const MCPS = ["All MCPs", "Filesystem", "Git", "Browser"];
 const BRANCH_COLORS = ["branch-green", "branch-purple", "branch-orange"];
 const CARD_VARIANTS = ["open", "merged", "running"];
 
@@ -93,6 +92,8 @@ const MODEL_SCOPES = {
 };
 
 let attachTarget = inputEl;
+const dashboardAttachments = [];
+const chatAttachments = [];
 
 let assistantBlock = null;
 let assistantText = "";
@@ -329,13 +330,77 @@ function setProjectName(path) {
 function setBusy(nextBusy) {
 	busy = nextBusy;
 	const connected = ws && ws.readyState === WebSocket.OPEN;
-	sendEl.disabled = !connected || busy;
+	const canSendDashboard = Boolean(inputEl.value.trim() || dashboardAttachments.length);
+	sendEl.disabled = !connected || busy || !canSendDashboard;
 	cancelEl.disabled = !busy;
 	inputEl.disabled = !connected;
 	chatInputEl.disabled = !connected;
-	sendEl.classList.toggle("hidden", !inputEl.value.trim());
+	sendEl.classList.toggle("hidden", !canSendDashboard);
 	chatMicBtnEl?.classList.toggle("hidden", busy);
 	cancelEl?.classList.toggle("hidden", !busy);
+}
+
+function getAttachmentsFor(target) {
+	return target === chatInputEl ? chatAttachments : dashboardAttachments;
+}
+
+function getPreviewContainerFor(target) {
+	return target === chatInputEl ? $("chat-attachment-previews") : $("attachment-previews");
+}
+
+function renderAttachmentPreviews(target = attachTarget) {
+	const attachments = getAttachmentsFor(target);
+	const container = getPreviewContainerFor(target);
+	if (!container) return;
+
+	container.replaceChildren();
+	if (attachments.length === 0) {
+		container.classList.add("hidden");
+		setBusy(busy);
+		return;
+	}
+
+	container.classList.remove("hidden");
+	for (const attachment of attachments) {
+		const chip = document.createElement("div");
+		chip.className = "attachment-chip";
+		chip.innerHTML = `
+			<img src="${attachment.previewUrl}" alt="${attachment.name}" />
+			<button type="button" class="attachment-remove" aria-label="Remove image">×</button>`;
+		chip.querySelector(".attachment-remove").addEventListener("click", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			const list = getAttachmentsFor(target);
+			const index = list.indexOf(attachment);
+			if (index >= 0) list.splice(index, 1);
+			renderAttachmentPreviews(target);
+		});
+		container.appendChild(chip);
+	}
+	setBusy(busy);
+}
+
+function addImageAttachment(file, target = attachTarget) {
+	if (!file || !file.type.startsWith("image/")) return;
+
+	const reader = new FileReader();
+	reader.onload = () => {
+		const previewUrl = reader.result;
+		const base64 = String(previewUrl).split(",")[1] ?? "";
+		getAttachmentsFor(target).push({
+			name: file.name,
+			mimeType: file.type || "image/png",
+			data: base64,
+			previewUrl,
+		});
+		renderAttachmentPreviews(target);
+	};
+	reader.readAsDataURL(file);
+}
+
+function clearAttachments(target = attachTarget) {
+	getAttachmentsFor(target).length = 0;
+	renderAttachmentPreviews(target);
 }
 
 function resizeTextarea(el) {
@@ -497,7 +562,6 @@ function setModels(payload) {
 function initDropdowns() {
 	setupModelSearch();
 	renderModelMenu();
-	renderDropdownMenu("mcps-menu", MCPS, MCPS[0], () => {});
 
 	$("model-trigger")?.addEventListener("click", (e) => {
 		e.stopPropagation();
@@ -511,9 +575,6 @@ function initDropdowns() {
 	});
 	$("chat-model-menu")?.addEventListener("click", (e) => e.stopPropagation());
 
-	setupDropdown("mcps-trigger", "mcps-menu");
-	setupDropdown("chat-mcps-trigger", "chat-mcps-menu");
-	renderDropdownMenu("chat-mcps-menu", MCPS, MCPS[0], () => {});
 	setupDropdown("project-trigger", "project-menu");
 	setupDropdown("branch-trigger", "branch-menu");
 
@@ -585,7 +646,7 @@ function renderTodayList() {
 		const icon = isRunning ? runningIconSvg() : branchIconSvg(stats.branchColor);
 		const meta = isRunning
 			? `${formatRelativeTime(session.updatedAt)}`
-			: `+${stats.additions} -${stats.deletions}`;
+			: `<span class="diff-add">+${stats.additions}</span> <span class="diff-del">-${stats.deletions}</span>`;
 
 		btn.innerHTML = `${icon}<span class="today-item-body"><span class="today-item-title">${sessionTitle(session)}</span><span class="today-item-meta">${meta}</span></span>`;
 
@@ -806,10 +867,19 @@ function clearChat() {
 	clearChangedFiles();
 }
 
-function addUserMessage(text) {
+function addUserMessage(text, images = []) {
 	const article = document.createElement("article");
 	article.className = "msg msg-user";
-	article.innerHTML = `<div class="msg-content">${renderMarkdown(text)}</div>`;
+	const imagesHtml = images.length
+		? `<div class="msg-images">${images
+				.map(
+					(image) =>
+						`<img src="${image.previewUrl || `data:${image.mimeType};base64,${image.data}`}" alt="${image.name || "Attached image"}" />`,
+				)
+				.join("")}</div>`
+		: "";
+	const textHtml = text ? `<div class="msg-content">${renderMarkdown(text)}</div>` : "";
+	article.innerHTML = `${imagesHtml}${textHtml}`;
 	messagesEl.appendChild(article);
 	scrollToBottom();
 }
@@ -1115,23 +1185,33 @@ function connect() {
 /* ── Send prompt ── */
 
 function sendPrompt(text, fromChat = false) {
+	const target = fromChat ? chatInputEl : inputEl;
 	const trimmed = text.trim();
-	if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN || busy) return;
+	const attachments = [...getAttachmentsFor(target)];
+	if ((!trimmed && attachments.length === 0) || !ws || ws.readyState !== WebSocket.OPEN || busy) return;
 
-	lastPrompt = trimmed;
+	const images = attachments.map(({ name, mimeType, data, previewUrl }) => ({
+		name,
+		mimeType,
+		data,
+		previewUrl,
+	}));
+
+	lastPrompt = trimmed || (images.length ? `[${images.length} image${images.length === 1 ? "" : "s"}]` : "");
 	showView("chat");
-	addUserMessage(trimmed);
+	addUserMessage(trimmed, images);
 
-	if (fromChat) {
-		chatInputEl.value = "";
-		resizeTextarea(chatInputEl);
-	} else {
-		inputEl.value = "";
-		resizeTextarea(inputEl);
-		sendEl.classList.add("hidden");
-	}
+	target.value = "";
+	resizeTextarea(target);
+	clearAttachments(target);
 
-	ws.send(JSON.stringify({ type: "prompt", text: trimmed }));
+	ws.send(
+		JSON.stringify({
+			type: "prompt",
+			text: trimmed,
+			images: images.map(({ mimeType, data }) => ({ mimeType, data })),
+		}),
+	);
 }
 
 /* ── Event listeners ── */
@@ -1164,7 +1244,6 @@ inputEl.addEventListener("keydown", (e) => {
 
 inputEl.addEventListener("input", () => {
 	resizeTextarea(inputEl);
-	sendEl.classList.toggle("hidden", !inputEl.value.trim());
 	setBusy(busy);
 	updateInlineCommands();
 });
@@ -1235,9 +1314,7 @@ $("chat-attach-btn")?.addEventListener("click", () => {
 fileInputEl.addEventListener("change", () => {
 	const file = fileInputEl.files?.[0];
 	if (file && attachTarget) {
-		const prefix = `[Attached image: ${file.name}]\n`;
-		attachTarget.value = prefix + attachTarget.value;
-		attachTarget.dispatchEvent(new Event("input"));
+		addImageAttachment(file, attachTarget);
 		attachTarget.focus();
 	}
 	fileInputEl.value = "";

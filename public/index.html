@@ -88,14 +88,15 @@
 					</header>
 
 					<div class="dashboard-body">
-						<form class="composer-box" id="composer">
+						<form class="composer-box home-composer" id="composer">
 							<textarea
 								id="input"
-								rows="3"
+								rows="2"
 								placeholder="Ask Cursor to build, fix bugs, explore"
 								autocomplete="off"
 								spellcheck="true"
 							></textarea>
+							<div class="attachment-previews hidden" id="attachment-previews" aria-label="Attached images"></div>
 							<div class="composer-bar">
 								<div class="composer-left">
 									<div class="dropdown composer-dropdown" id="model-dropdown">
@@ -118,15 +119,6 @@
 											<div class="model-menu-list" id="model-menu-list"></div>
 										</div>
 									</div>
-									<div class="dropdown composer-dropdown" id="mcps-dropdown">
-										<button type="button" class="pill-btn dropdown-trigger" id="mcps-trigger">
-											<span>MCPs</span>
-											<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-												<path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-											</svg>
-										</button>
-										<div class="dropdown-menu hidden" id="mcps-menu"></div>
-									</div>
 								</div>
 								<div class="composer-right">
 									<button type="button" class="icon-btn composer-icon" id="attach-btn" aria-label="Attach image">
@@ -142,7 +134,7 @@
 											<path d="M4 8.5a5 5 0 0010 0M9 13.5V16" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
 										</svg>
 									</button>
-									<button type="submit" class="send-btn hidden" id="send" disabled aria-label="Send">
+									<button type="submit" class="send-btn" id="send" disabled aria-label="Send">
 										<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
 											<path d="M8 14V3M8 3l-4 4M8 3l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
 										</svg>
@@ -203,6 +195,7 @@
 								autocomplete="off"
 								spellcheck="true"
 							></textarea>
+							<div class="attachment-previews hidden" id="chat-attachment-previews" aria-label="Attached images"></div>
 							<div class="composer-bar">
 								<div class="composer-left">
 									<div class="dropdown composer-dropdown" id="chat-model-dropdown">
@@ -224,15 +217,6 @@
 											</div>
 											<div class="model-menu-list" id="chat-model-menu-list"></div>
 										</div>
-									</div>
-									<div class="dropdown composer-dropdown" id="chat-mcps-dropdown">
-										<button type="button" class="pill-btn dropdown-trigger" id="chat-mcps-trigger">
-											<span>MCPs</span>
-											<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-												<path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-											</svg>
-										</button>
-										<div class="dropdown-menu hidden" id="chat-mcps-menu"></div>
 									</div>
 								</div>
 								<div class="composer-right">
