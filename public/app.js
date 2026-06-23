@@ -17,8 +17,9 @@ const inputEl = $("input");
 const sendEl = $("send");
 const chatComposerEl = $("chat-composer");
 const chatInputEl = $("chat-input");
-const chatSendEl = $("chat-send");
 const cancelEl = $("cancel");
+const chatMicBtnEl = $("chat-mic-btn");
+const fileContextEl = $("file-context");
 const sidebarEl = $("sidebar");
 const sidebarToggleEl = $("sidebar-toggle");
 const searchBtnEl = $("search-btn");
@@ -52,9 +53,46 @@ let models = [];
 let currentModelId = null;
 let modelSearchQuery = "";
 let modelSearchTimer = null;
+let activeModelScope = "dashboard";
 let commands = [];
 let gitInfo = { branch: "master", branches: ["master"], project: "pi-web" };
 let lastPrompt = "";
+let fileContextCollapsed = false;
+
+const changedFiles = new Map();
+
+const LANG_TAGS = {
+	js: "JS",
+	ts: "TS",
+	tsx: "TS",
+	jsx: "JS",
+	py: "PY",
+	css: "CSS",
+	html: "HTML",
+	json: "JSON",
+	md: "MD",
+};
+
+const MODEL_SCOPES = {
+	dashboard: {
+		searchId: "model-search",
+		listId: "model-menu-list",
+		menuId: "model-menu",
+		dropdownId: "model-dropdown",
+		labelId: "model-label",
+		triggerId: "model-trigger",
+	},
+	chat: {
+		searchId: "chat-model-search",
+		listId: "chat-model-menu-list",
+		menuId: "chat-model-menu",
+		dropdownId: "chat-model-dropdown",
+		labelId: "chat-model-label",
+		triggerId: "chat-model-trigger",
+	},
+};
+
+let attachTarget = inputEl;
 
 let assistantBlock = null;
 let assistantText = "";
@@ -230,7 +268,14 @@ function sessionBranchName(session) {
 
 function currentModelLabel() {
 	const match = models.find((model) => model.id === currentModelId);
-	return match?.name || modelLabelEl.textContent || "Model";
+	return match?.name || "Model";
+}
+
+function syncModelLabels() {
+	const label = currentModelLabel();
+	if (modelLabelEl) modelLabelEl.textContent = label;
+	const chatLabel = $("chat-model-label");
+	if (chatLabel) chatLabel.textContent = label;
 }
 
 function modelSubtitleLabel() {
@@ -285,11 +330,12 @@ function setBusy(nextBusy) {
 	busy = nextBusy;
 	const connected = ws && ws.readyState === WebSocket.OPEN;
 	sendEl.disabled = !connected || busy;
-	chatSendEl.disabled = !connected || busy;
 	cancelEl.disabled = !busy;
 	inputEl.disabled = !connected;
 	chatInputEl.disabled = !connected;
 	sendEl.classList.toggle("hidden", !inputEl.value.trim());
+	chatMicBtnEl?.classList.toggle("hidden", busy);
+	cancelEl?.classList.toggle("hidden", !busy);
 }
 
 function resizeTextarea(el) {
@@ -303,8 +349,10 @@ function closeAllDropdowns() {
 	document.querySelectorAll(".dropdown-menu").forEach((menu) => menu.classList.add("hidden"));
 	document.querySelectorAll(".dropdown.is-open").forEach((dropdown) => dropdown.classList.remove("is-open"));
 	modelSearchQuery = "";
-	const modelSearch = $("model-search");
-	if (modelSearch) modelSearch.value = "";
+	for (const scope of Object.values(MODEL_SCOPES)) {
+		const search = $(scope.searchId);
+		if (search) search.value = "";
+	}
 }
 
 function setupDropdown(triggerId, menuId) {
@@ -343,41 +391,51 @@ function renderDropdownMenu(menuId, items, selected, onSelect) {
 	}
 }
 
-function openModelDropdown() {
-	const menu = $("model-menu");
-	const dropdown = $("model-dropdown");
+function openModelDropdown(scope = "dashboard") {
+	const config = MODEL_SCOPES[scope];
+	if (!config) return;
+
+	const menu = $(config.menuId);
+	const dropdown = $(config.dropdownId);
 	if (!menu || !dropdown) return;
 
 	const wasOpen = !menu.classList.contains("hidden");
 	closeAllDropdowns();
 	if (wasOpen) return;
 
+	activeModelScope = scope;
 	menu.classList.remove("hidden");
 	dropdown.classList.add("is-open");
 	modelSearchQuery = "";
-	const modelSearch = $("model-search");
-	if (modelSearch) {
-		modelSearch.value = "";
-	}
-	renderModelMenuList();
+	const modelSearch = $(config.searchId);
+	if (modelSearch) modelSearch.value = "";
+	renderModelMenuList(config.listId);
 	requestAnimationFrame(() => modelSearch?.focus());
 }
 
-function setupModelSearch() {
-	const modelSearch = $("model-search");
+function setupModelSearchForScope(scope) {
+	const config = MODEL_SCOPES[scope];
+	const modelSearch = $(config.searchId);
 	if (!modelSearch || modelSearch.dataset.ready) return;
 	modelSearch.dataset.ready = "1";
 
 	modelSearch.addEventListener("input", () => {
 		clearTimeout(modelSearchTimer);
 		modelSearchTimer = setTimeout(() => {
+			activeModelScope = scope;
 			modelSearchQuery = modelSearch.value;
-			renderModelMenuList();
+			renderModelMenuList(config.listId);
 		}, 120);
 	});
 
 	modelSearch.addEventListener("click", (e) => e.stopPropagation());
 	modelSearch.addEventListener("keydown", (e) => e.stopPropagation());
+}
+
+function setupModelSearch() {
+	for (const scope of Object.keys(MODEL_SCOPES)) {
+		setupModelSearchForScope(scope);
+	}
 }
 
 function filteredModels() {
@@ -391,8 +449,8 @@ function filteredModels() {
 	);
 }
 
-function renderModelMenuList() {
-	const list = $("model-menu-list");
+function renderModelMenuList(listId = "model-menu-list") {
+	const list = $(listId);
 	if (!list) return;
 
 	list.replaceChildren();
@@ -423,8 +481,9 @@ function renderModelMenuList() {
 
 function renderModelMenu() {
 	setupModelSearch();
-	renderModelMenuList();
-	modelLabelEl.textContent = currentModelLabel();
+	renderModelMenuList("model-menu-list");
+	renderModelMenuList("chat-model-menu-list");
+	syncModelLabels();
 }
 
 function setModels(payload) {
@@ -442,11 +501,19 @@ function initDropdowns() {
 
 	$("model-trigger")?.addEventListener("click", (e) => {
 		e.stopPropagation();
-		openModelDropdown();
+		openModelDropdown("dashboard");
 	});
 	$("model-menu")?.addEventListener("click", (e) => e.stopPropagation());
 
+	$("chat-model-trigger")?.addEventListener("click", (e) => {
+		e.stopPropagation();
+		openModelDropdown("chat");
+	});
+	$("chat-model-menu")?.addEventListener("click", (e) => e.stopPropagation());
+
 	setupDropdown("mcps-trigger", "mcps-menu");
+	setupDropdown("chat-mcps-trigger", "chat-mcps-menu");
+	renderDropdownMenu("chat-mcps-menu", MCPS, MCPS[0], () => {});
 	setupDropdown("project-trigger", "project-menu");
 	setupDropdown("branch-trigger", "branch-menu");
 
@@ -643,12 +710,100 @@ function newSession() {
 	ws.send(JSON.stringify({ type: "new_session" }));
 }
 
+function clearChangedFiles() {
+	changedFiles.clear();
+	renderFileContext();
+}
+
+function fileLangTag(path) {
+	const ext = path.split(".").pop()?.toLowerCase() || "";
+	return LANG_TAGS[ext] || ext.toUpperCase().slice(0, 4) || "FILE";
+}
+
+function parseToolPayload(raw) {
+	if (raw == null) return null;
+	if (typeof raw === "object") return raw;
+	try {
+		return JSON.parse(raw);
+	} catch {
+		return null;
+	}
+}
+
+function extractFilePath(payload) {
+	if (!payload || typeof payload !== "object") return null;
+	return payload.path || payload.file_path || payload.filePath || payload.file || payload.target || null;
+}
+
+function estimateLineDiff(content) {
+	if (!content || typeof content !== "string") return { add: 12, del: 3 };
+	const lines = content.split("\n").length;
+	return { add: Math.max(lines, 1), del: Math.max(Math.floor(lines * 0.15), 1) };
+}
+
+function trackFileFromTool(state) {
+	const toolName = resolveToolName(state).toLowerCase();
+	if (!/(write|edit|patch|replace|create|fs)/.test(toolName)) return;
+
+	const payload = parseToolPayload(state.rawInput);
+	const path = extractFilePath(payload);
+	if (!path) return;
+
+	const content =
+		payload?.content || payload?.new_string || payload?.newString || payload?.text || payload?.contents || "";
+	const diff = estimateLineDiff(typeof content === "string" ? content : JSON.stringify(content));
+	const existing = changedFiles.get(path);
+
+	if (existing) {
+		existing.additions += diff.add;
+		existing.deletions += diff.del;
+	} else {
+		changedFiles.set(path, { path, additions: diff.add, deletions: diff.del });
+	}
+
+	renderFileContext();
+}
+
+function renderFileContext() {
+	const countEl = $("file-context-count");
+	const listEl = $("file-context-list");
+	if (!fileContextEl || !countEl || !listEl) return;
+
+	const files = [...changedFiles.values()].sort((a, b) => a.path.localeCompare(b.path));
+	if (files.length === 0) {
+		fileContextEl.classList.add("hidden");
+		return;
+	}
+
+	fileContextEl.classList.remove("hidden");
+	fileContextEl.classList.toggle("collapsed", fileContextCollapsed);
+	$("file-context-toggle")?.setAttribute("aria-expanded", String(!fileContextCollapsed));
+	countEl.textContent = `${files.length} File${files.length === 1 ? "" : "s"} Changed`;
+
+	listEl.replaceChildren();
+	for (const file of files) {
+		const li = document.createElement("li");
+		li.className = "file-context-item";
+		li.innerHTML = `
+			<span class="file-context-file">
+				<span class="file-context-lang">${fileLangTag(file.path)}</span>
+				<span class="file-context-name">${basename(file.path)}</span>
+			</span>
+			<span class="file-context-diff">
+				<span class="diff-add">+${file.additions}</span>
+				<span class="diff-del">-${file.deletions}</span>
+			</span>`;
+		listEl.appendChild(li);
+	}
+}
+
 /* ── Chat messages ── */
 
 function clearChat() {
 	messagesEl.replaceChildren();
 	toolCards.clear();
 	finalizeAssistantTurn();
+	clearChangedFiles();
 }
 
 function addUserMessage(text) {
@@ -749,6 +904,7 @@ function updateToolCard(msg) {
 		}
 	}
 
+	trackFileFromTool(state);
 	scrollToBottom();
 }
 
@@ -1066,17 +1222,30 @@ document.addEventListener("keydown", (e) => {
 	}
 });
 
-attachBtnEl.addEventListener("click", () => fileInputEl.click());
+attachBtnEl.addEventListener("click", () => {
+	attachTarget = inputEl;
+	fileInputEl.click();
+});
+
+$("chat-attach-btn")?.addEventListener("click", () => {
+	attachTarget = chatInputEl;
+	fileInputEl.click();
+});
 
 fileInputEl.addEventListener("change", () => {
 	const file = fileInputEl.files?.[0];
-	if (file) {
+	if (file && attachTarget) {
 		const prefix = `[Attached image: ${file.name}]\n`;
-		inputEl.value = prefix + inputEl.value;
-		inputEl.dispatchEvent(new Event("input"));
-		inputEl.focus();
+		attachTarget.value = prefix + attachTarget.value;
+		attachTarget.dispatchEvent(new Event("input"));
+		attachTarget.focus();
 	}
 	fileInputEl.value = "";
+});
+
+$("file-context-toggle")?.addEventListener("click", () => {
+	fileContextCollapsed = !fileContextCollapsed;
+	renderFileContext();
 });
 
 document.addEventListener("click", (e) => {
