@@ -514,6 +514,44 @@ input {
 	z-index: 200;
 }
 
+.model-menu.dropdown-menu {
+	top: calc(100% + 6px);
+	bottom: auto;
+	min-width: 280px;
+	padding: 0;
+	overflow: hidden;
+}
+
+.model-menu-search-wrap {
+	padding: 0.45rem;
+	border-bottom: 1px solid var(--border-subtle);
+}
+
+.model-menu-search-wrap input {
+	width: 100%;
+	padding: 0.45rem 0.6rem;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: #0f0f0f;
+	color: var(--text);
+	font-size: 0.82rem;
+	outline: none;
+}
+
+.model-menu-search-wrap input:focus {
+	border-color: #444;
+}
+
+.model-menu-search-wrap input::placeholder {
+	color: var(--muted-dim);
+}
+
+.model-menu-list {
+	max-height: min(1400px, 70vh);
+	overflow-y: auto;
+	padding: 0.35rem;
+}
+
 .composer-icon {
 	color: var(--muted);
 }
@@ -635,11 +673,6 @@ input {
 	color: var(--muted);
 }
 
-.model-menu {
-	max-height: 280px;
-	overflow-y: auto;
-}
-
 .model-menu .dropdown-item {
 	display: flex;
 	flex-direction: column;
@@ -654,6 +687,12 @@ input {
 .model-menu .model-option-desc {
 	font-size: 0.72rem;
 	color: var(--muted);
+}
+
+.model-menu-empty {
+	padding: 0.65rem 0.75rem;
+	font-size: 0.8rem;
+	color: var(--muted-dim);
 }
 
 /* ── Activity feed ── */

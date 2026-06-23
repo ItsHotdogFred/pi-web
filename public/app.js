@@ -50,6 +50,8 @@ let searchQuery = "";
 let currentView = "dashboard";
 let models = [];
 let currentModelId = null;
+let modelSearchQuery = "";
+let modelSearchTimer = null;
 let commands = [];
 let gitInfo = { branch: "master", branches: ["master"], project: "pi-web" };
 let lastPrompt = "";
@@ -300,6 +302,9 @@ function resizeTextarea(el) {
 function closeAllDropdowns() {
 	document.querySelectorAll(".dropdown-menu").forEach((menu) => menu.classList.add("hidden"));
 	document.querySelectorAll(".dropdown.is-open").forEach((dropdown) => dropdown.classList.remove("is-open"));
+	modelSearchQuery = "";
+	const modelSearch = $("model-search");
+	if (modelSearch) modelSearch.value = "";
 }
 
 function setupDropdown(triggerId, menuId) {
@@ -338,12 +343,70 @@ function renderDropdownMenu(menuId, items, selected, onSelect) {
 	}
 }
 
-function renderModelMenu() {
+function openModelDropdown() {
 	const menu = $("model-menu");
-	menu.replaceChildren();
-	menu.classList.add("model-menu");
+	const dropdown = $("model-dropdown");
+	if (!menu || !dropdown) return;
 
-	for (const model of models) {
+	const wasOpen = !menu.classList.contains("hidden");
+	closeAllDropdowns();
+	if (wasOpen) return;
+
+	menu.classList.remove("hidden");
+	dropdown.classList.add("is-open");
+	modelSearchQuery = "";
+	const modelSearch = $("model-search");
+	if (modelSearch) {
+		modelSearch.value = "";
+	}
+	renderModelMenuList();
+	requestAnimationFrame(() => modelSearch?.focus());
+}
+
+function setupModelSearch() {
+	const modelSearch = $("model-search");
+	if (!modelSearch || modelSearch.dataset.ready) return;
+	modelSearch.dataset.ready = "1";
+
+	modelSearch.addEventListener("input", () => {
+		clearTimeout(modelSearchTimer);
+		modelSearchTimer = setTimeout(() => {
+			modelSearchQuery = modelSearch.value;
+			renderModelMenuList();
+		}, 120);
+	});
+
+	modelSearch.addEventListener("click", (e) => e.stopPropagation());
+	modelSearch.addEventListener("keydown", (e) => e.stopPropagation());
+}
+
+function filteredModels() {
+	const q = modelSearchQuery.trim().toLowerCase();
+	if (!q) return models;
+	return models.filter(
+		(model) =>
+			model.name.toLowerCase().includes(q) ||
+			model.id.toLowerCase().includes(q) ||
+			(model.description && model.description.toLowerCase().includes(q)),
+	);
+}
+
+function renderModelMenuList() {
+	const list = $("model-menu-list");
+	if (!list) return;
+
+	list.replaceChildren();
+	const items = filteredModels();
+
+	if (items.length === 0) {
+		const empty = document.createElement("div");
+		empty.className = "model-menu-empty";
+		empty.textContent = models.length ? "No models match your search" : "Waiting for Pi models…";
+		list.appendChild(empty);
+		return;
+	}
+
+	for (const model of items) {
 		const btn = document.createElement("button");
 		btn.type = "button";
 		btn.className = "dropdown-item" + (model.id === currentModelId ? " selected" : "");
@@ -354,9 +417,13 @@ function renderModelMenu() {
 			}
 			closeAllDropdowns();
 		});
-		menu.appendChild(btn);
+		list.appendChild(btn);
 	}
+}
 
+function renderModelMenu() {
+	setupModelSearch();
+	renderModelMenuList();
 	modelLabelEl.textContent = currentModelLabel();
 }
 
@@ -369,10 +436,16 @@ function setModels(payload) {
 }
 
 function initDropdowns() {
+	setupModelSearch();
 	renderModelMenu();
 	renderDropdownMenu("mcps-menu", MCPS, MCPS[0], () => {});
 
-	setupDropdown("model-trigger", "model-menu");
+	$("model-trigger")?.addEventListener("click", (e) => {
+		e.stopPropagation();
+		openModelDropdown();
+	});
+	$("model-menu")?.addEventListener("click", (e) => e.stopPropagation());
+
 	setupDropdown("mcps-trigger", "mcps-menu");
 	setupDropdown("project-trigger", "project-menu");
 	setupDropdown("branch-trigger", "branch-menu");

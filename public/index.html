@@ -105,7 +105,18 @@
 												<path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
 											</svg>
 										</button>
-										<div class="dropdown-menu hidden" id="model-menu"></div>
+										<div class="dropdown-menu model-menu hidden" id="model-menu">
+											<div class="model-menu-search-wrap">
+												<input
+													type="search"
+													id="model-search"
+													placeholder="Search models…"
+													autocomplete="off"
+													spellcheck="false"
+												/>
+											</div>
+											<div class="model-menu-list" id="model-menu-list"></div>
+										</div>
 									</div>
 									<div class="dropdown composer-dropdown" id="mcps-dropdown">
 										<button type="button" class="pill-btn dropdown-trigger" id="mcps-trigger">
