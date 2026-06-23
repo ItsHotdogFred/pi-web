@@ -429,7 +429,7 @@ input {
 	border: 1px solid var(--border);
 	border-radius: 14px;
 	background: var(--panel);
-	overflow: hidden;
+	overflow: visible;
 	transition: border-color 0.15s, box-shadow 0.15s;
 }
 
@@ -461,12 +461,24 @@ input {
 	justify-content: space-between;
 	gap: 0.5rem;
 	padding: 0.5rem 0.75rem 0.65rem;
+	overflow: visible;
 }
 
 .composer-left {
 	display: flex;
 	align-items: center;
 	gap: 0.35rem;
+	overflow: visible;
+}
+
+.composer-dropdown {
+	position: relative;
+	z-index: 1;
+}
+
+.composer-dropdown:focus-within,
+.composer-dropdown.is-open {
+	z-index: 200;
 }
 
 .composer-right {
@@ -496,7 +508,10 @@ input {
 }
 
 .composer-dropdown .dropdown-menu {
-	min-width: 140px;
+	min-width: 220px;
+	top: auto;
+	bottom: calc(100% + 6px);
+	z-index: 200;
 }
 
 .composer-icon {

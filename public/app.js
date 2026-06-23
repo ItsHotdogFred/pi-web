@@ -299,12 +299,15 @@ function resizeTextarea(el) {
 
 function closeAllDropdowns() {
 	document.querySelectorAll(".dropdown-menu").forEach((menu) => menu.classList.add("hidden"));
+	document.querySelectorAll(".dropdown.is-open").forEach((dropdown) => dropdown.classList.remove("is-open"));
 }
 
-function setupDropdown(triggerId, menuId, items, onSelect) {
+function setupDropdown(triggerId, menuId) {
 	const trigger = $(triggerId);
 	const menu = $(menuId);
 	if (!trigger || !menu) return;
+
+	const dropdown = trigger.closest(".dropdown");
 
 	trigger.addEventListener("click", (e) => {
 		e.stopPropagation();
@@ -312,6 +315,7 @@ function setupDropdown(triggerId, menuId, items, onSelect) {
 		closeAllDropdowns();
 		if (!wasOpen) {
 			menu.classList.remove("hidden");
+			dropdown?.classList.add("is-open");
 		}
 	});
 
