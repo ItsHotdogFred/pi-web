@@ -1,4 +1,4 @@
-/* pi-web — Cursor-style dashboard */
+/* pi-web — browser dashboard for Pi */
 
 const $ = (id) => document.getElementById(id);
 
@@ -18,7 +18,6 @@ const sendEl = $("send");
 const chatComposerEl = $("chat-composer");
 const chatInputEl = $("chat-input");
 const cancelEl = $("cancel");
-const chatMicBtnEl = $("chat-mic-btn");
 const fileContextEl = $("file-context");
 const sidebarEl = $("sidebar");
 const sidebarToggleEl = $("sidebar-toggle");
@@ -37,8 +36,7 @@ const modelLabelEl = $("model-label");
 
 const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 
-const BRANCH_COLORS = ["branch-green", "branch-purple", "branch-orange"];
-const CARD_VARIANTS = ["open", "merged", "running"];
+const SESSION_ACCENT_COLORS = ["branch-green", "branch-purple", "branch-orange"];
 
 let ws = null;
 let busy = false;
@@ -58,7 +56,7 @@ let gitInfo = { branch: "master", branches: ["master"], project: "pi-web" };
 let lastPrompt = "";
 let fileContextCollapsed = false;
 
-const changedFiles = new Map();
+const changedFiles = new Set();
 
 const LANG_TAGS = {
 	js: "JS",
@@ -167,15 +165,29 @@ function hashCode(str) {
 	return Math.abs(hash);
 }
 
-function pseudoStats(sessionId) {
-	const h = hashCode(sessionId || "default");
-	return {
-		files: 4 + (h % 20),
-		additions: 100 + (h % 1200),
-		deletions: 20 + (h % 200),
-		variant: CARD_VARIANTS[h % CARD_VARIANTS.length],
-		branchColor: BRANCH_COLORS[h % BRANCH_COLORS.length],
-	};
+function sessionAccentColor(sessionId) {
+	return SESSION_ACCENT_COLORS[hashCode(sessionId || "default") % SESSION_ACCENT_COLORS.length];
+}
+
+function sessionProjectName(session) {
+	return basename(session.cwd || cwd || gitInfo.project);
+}
+
+function sessionStatus(session, { isActive, isRunning }) {
+	if (isRunning) return { variant: "running", label: "Running" };
+	if (isActive) return { variant: "active", label: "Active" };
+	return { variant: "saved", label: "Saved" };
+}
+
+function sessionBadgeIcon(variant) {
+	switch (variant) {
+		case "running":
+			return `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="3.5" stroke="currentColor" stroke-width="1.2"/><circle cx="5" cy="5" r="1.25" fill="currentColor"/></svg>`;
+		case "active":
+			return `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="2.25" fill="currentColor"/></svg>`;
+		default:
+			return `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="3.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 3v2.5l1.5 1" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>`;
+	}
 }
 
 function formatRelativeTime(iso) {
@@ -321,16 +333,6 @@ function sessionTitle(session) {
 	return session.title || "New Agent";
 }
 
-function sessionBranchName(session) {
-	const title = sessionTitle(session);
-	const slug = title
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-|-$/g, "")
-		.slice(0, 40);
-	return slug ? `cursor/${slug}-3cd9` : gitInfo.branch;
-}
-
 function currentModelLabel() {
 	const match = models.find((model) => model.id === currentModelId);
 	return match?.name || "Model";
@@ -341,11 +343,6 @@ function syncModelLabels() {
 	if (modelLabelEl) modelLabelEl.textContent = label;
 	const chatLabel = $("chat-model-label");
 	if (chatLabel) chatLabel.textContent = label;
-}
-
-function modelSubtitleLabel() {
-	const label = currentModelLabel();
-	return label.toLowerCase().replace(/\s+/g, "-");
 }
 
 /* ── Views ── */
@@ -386,9 +383,8 @@ function setStatus(state, detail = "") {
 
 function setProjectName(path) {
 	cwd = path || "";
-	const name = basename(path);
-	projectNameEl.textContent = name;
-	gitInfo.project = name;
+	gitInfo.project = basename(path);
+	syncGitContext();
 }
 
 function setBusy(nextBusy) {
@@ -400,7 +396,6 @@ function setBusy(nextBusy) {
 	inputEl.disabled = !connected;
 	chatInputEl.disabled = !connected;
 	sendEl.classList.toggle("hidden", !canSendDashboard);
-	chatMicBtnEl?.classList.toggle("hidden", busy);
 	cancelEl?.classList.toggle("hidden", !busy);
 }
 
@@ -484,40 +479,40 @@ function closeAllDropdowns() {
 	}
 }
 
-function setupDropdown(triggerId, menuId) {
-	const trigger = $(triggerId);
-	const menu = $(menuId);
-	if (!trigger || !menu) return;
+function initDropdowns() {
+	setupModelSearch();
+	renderModelMenu();
 
-	const dropdown = trigger.closest(".dropdown");
-
-	trigger.addEventListener("click", (e) => {
+	$("model-trigger")?.addEventListener("click", (e) => {
 		e.stopPropagation();
-		const wasOpen = !menu.classList.contains("hidden");
-		closeAllDropdowns();
-		if (!wasOpen) {
-			menu.classList.remove("hidden");
-			dropdown?.classList.add("is-open");
-		}
+		openModelDropdown("dashboard");
 	});
+	$("model-menu")?.addEventListener("click", (e) => e.stopPropagation());
 
-	menu.addEventListener("click", (e) => e.stopPropagation());
+	$("chat-model-trigger")?.addEventListener("click", (e) => {
+		e.stopPropagation();
+		openModelDropdown("chat");
+	});
+	$("chat-model-menu")?.addEventListener("click", (e) => e.stopPropagation());
+
+	document.addEventListener("click", closeAllDropdowns);
 }
 
-function renderDropdownMenu(menuId, items, selected, onSelect) {
-	const menu = $(menuId);
-	menu.replaceChildren();
-	for (const item of items) {
-		const btn = document.createElement("button");
-		btn.type = "button";
-		btn.className = "dropdown-item" + (item === selected ? " selected" : "");
-		btn.textContent = item;
-		btn.addEventListener("click", () => {
-			onSelect(item);
-			closeAllDropdowns();
-		});
-		menu.appendChild(btn);
+function syncGitContext() {
+	projectNameEl.textContent = gitInfo.project || basename(cwd);
+	branchNameEl.textContent = gitInfo.branch || "master";
+}
+
+async function fetchGitInfo() {
+	try {
+		const res = await fetch("/api/git");
+		if (res.ok) {
+			gitInfo = await res.json();
+		}
+	} catch {
+		// keep defaults
 	}
+	syncGitContext();
 }
 
 function openModelDropdown(scope = "dashboard") {
@@ -623,59 +618,11 @@ function setModels(payload) {
 	renderSessions();
 }
 
-function initDropdowns() {
-	setupModelSearch();
-	renderModelMenu();
-
-	$("model-trigger")?.addEventListener("click", (e) => {
-		e.stopPropagation();
-		openModelDropdown("dashboard");
-	});
-	$("model-menu")?.addEventListener("click", (e) => e.stopPropagation());
-
-	$("chat-model-trigger")?.addEventListener("click", (e) => {
-		e.stopPropagation();
-		openModelDropdown("chat");
-	});
-	$("chat-model-menu")?.addEventListener("click", (e) => e.stopPropagation());
-
-	setupDropdown("project-trigger", "project-menu");
-	setupDropdown("branch-trigger", "branch-menu");
-
-	document.addEventListener("click", closeAllDropdowns);
-}
-
-function updateGitDropdowns() {
-	renderDropdownMenu("branch-menu", gitInfo.branches, gitInfo.branch, (branch) => {
-		gitInfo.branch = branch;
-		branchNameEl.textContent = branch;
-	});
-
-	const projects = [gitInfo.project];
-	renderDropdownMenu("project-menu", projects, gitInfo.project, () => {});
-	branchNameEl.textContent = gitInfo.branch;
-}
-
-async function fetchGitInfo() {
-	try {
-		const res = await fetch("/api/git");
-		if (res.ok) {
-			gitInfo = await res.json();
-			projectNameEl.textContent = gitInfo.project || basename(cwd);
-			updateGitDropdowns();
-		}
-	} catch {
-		updateGitDropdowns();
-	}
-}
-
 /* ── Today sidebar & activity feed ── */
 
-function branchIconSvg(colorClass) {
+function sessionIconSvg(colorClass) {
 	return `<svg class="today-item-icon ${colorClass}" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-		<circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.1"/>
-		<circle cx="10" cy="10" r="2" stroke="currentColor" stroke-width="1.1"/>
-		<path d="M4 6v2.5a1.5 1.5 0 001.5 1.5H8" stroke="currentColor" stroke-width="1.1"/>
+		<path d="M3 3.5h8a1 1 0 011 1v5a1 1 0 01-1 1H6.5L4 13V9.5H3a1 1 0 01-1-1v-5a1 1 0 011-1z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
 	</svg>`;
 }
 
@@ -698,19 +645,19 @@ function renderTodayList() {
 	}
 
 	for (const session of list) {
-		const stats = pseudoStats(session.sessionId);
 		const isActive = session.sessionId === sessionId;
 		const isRunning = isActive && busy;
+		const status = sessionStatus(session, { isActive, isRunning });
 
 		const btn = document.createElement("button");
 		btn.type = "button";
 		btn.className = "today-item" + (isActive ? " active" : "");
 		btn.dataset.sessionId = session.sessionId;
 
-		const icon = isRunning ? runningIconSvg() : branchIconSvg(stats.branchColor);
+		const icon = isRunning ? runningIconSvg() : sessionIconSvg(sessionAccentColor(session.sessionId));
 		const meta = isRunning
-			? `${formatRelativeTime(session.updatedAt)}`
-			: `<span class="diff-add">+${stats.additions}</span> <span class="diff-del">-${stats.deletions}</span>`;
+			? "Working…"
+			: formatRelativeTime(session.updatedAt) || sessionProjectName(session);
 
 		btn.innerHTML = `${icon}<span class="today-item-body"><span class="today-item-title">${sessionTitle(session)}</span><span class="today-item-meta">${meta}</span></span>`;
 
@@ -719,7 +666,7 @@ function renderTodayList() {
 	}
 }
 
-function renderActivityCardLeft(session, stats, isRunning) {
+function renderActivityCardLeft(session, status, isRunning) {
 	const left = document.createElement("div");
 	left.className = "activity-card-left";
 
@@ -728,32 +675,29 @@ function renderActivityCardLeft(session, stats, isRunning) {
 		const preview = lastPrompt || sessionTitle(session);
 		const lines = preview.split("\n").slice(0, 2);
 		left.innerHTML = lines
-			.map((line, index) => {
-				const prefix = index === 0 ? '<span class="code-prompt">$</span> ' : "";
-				return `<div class="code-line">${prefix}${line.trim()}</div>`;
-			})
+			.map((line) => `<div class="code-line">${line.trim()}</div>`)
 			.join("");
 		return left;
 	}
 
-	const files = document.createElement("span");
-	files.className = "activity-card-files";
-	files.textContent = `${stats.files} files`;
+	const meta = document.createElement("div");
+	meta.className = "activity-card-meta";
 
-	const diff = document.createElement("span");
-	diff.className = "activity-card-diff";
-	diff.innerHTML = `<span class="diff-add">+${stats.additions}</span><span class="diff-del">-${stats.deletions}</span>`;
+	const time = document.createElement("span");
+	time.className = "activity-card-time";
+	time.textContent = formatRelativeTime(session.updatedAt) || "No activity yet";
 
-	const statsRow = document.createElement("div");
-	statsRow.className = "activity-card-stats";
-	statsRow.append(files, diff);
+	const project = document.createElement("span");
+	project.className = "activity-card-project";
+	project.textContent = sessionProjectName(session);
+
+	meta.append(time, project);
 
 	const badge = document.createElement("span");
-	badge.className = `activity-badge ${stats.variant}`;
-	const badgeLabels = { open: "Open", merged: "Merged", running: "Running" };
-	badge.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="3" cy="5" r="1.5" stroke="currentColor"/><circle cx="7" cy="5" r="1.5" stroke="currentColor"/><path d="M3 5.5h1.5a1 1 0 001-1H7" stroke="currentColor"/></svg> ${badgeLabels[stats.variant] || "Open"}`;
+	badge.className = `activity-badge ${status.variant}`;
+	badge.innerHTML = `${sessionBadgeIcon(status.variant)} ${status.label}`;
 
-	left.append(statsRow, badge);
+	left.append(meta, badge);
 	return left;
 }
 
@@ -770,24 +714,19 @@ function renderActivityFeed() {
 	}
 
 	for (const session of list) {
-		const stats = pseudoStats(session.sessionId);
 		const isActive = session.sessionId === sessionId;
 		const isRunning = isActive && busy;
-		const branchName = sessionBranchName(session);
+		const status = sessionStatus(session, { isActive, isRunning });
 
 		const card = document.createElement("button");
 		card.type = "button";
 		card.className = "activity-card" + (isActive ? " selected" : "");
 		card.dataset.sessionId = session.sessionId;
 
-		const left = renderActivityCardLeft(session, stats, isRunning);
+		const left = renderActivityCardLeft(session, status, isRunning);
 
 		const right = document.createElement("div");
 		right.className = "activity-card-right";
-
-		const branch = document.createElement("span");
-		branch.className = "activity-card-branch";
-		branch.textContent = branchName;
 
 		const title = document.createElement("span");
 		title.className = "activity-card-title";
@@ -795,9 +734,9 @@ function renderActivityFeed() {
 
 		const subtitle = document.createElement("span");
 		subtitle.className = "activity-card-subtitle";
-		subtitle.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="3" cy="6" r="1.5" stroke="currentColor"/><circle cx="9" cy="6" r="1.5" stroke="currentColor"/><path d="M3 6.5h1.5a1 1 0 001-1H9" stroke="currentColor"/></svg> ${modelSubtitleLabel()} ${gitInfo.project} ${formatRelativeTime(session.updatedAt)}`;
+		subtitle.textContent = sessionProjectName(session);
 
-		right.append(branch, title, subtitle);
+		right.append(title, subtitle);
 		card.append(left, right);
 
 		card.addEventListener("click", () => openSession(session.sessionId));
@@ -880,12 +819,6 @@ function extractFilePath(payload) {
 	return payload.path || payload.file_path || payload.filePath || payload.file || payload.target || null;
 }
 
-function estimateLineDiff(content) {
-	if (!content || typeof content !== "string") return { add: 12, del: 3 };
-	const lines = content.split("\n").length;
-	return { add: Math.max(lines, 1), del: Math.max(Math.floor(lines * 0.15), 1) };
-}
-
 function trackFileFromTool(state) {
 	const toolName = resolveToolName(state).toLowerCase();
 	if (!/(write|edit|patch|replace|create|fs)/.test(toolName)) return;
@@ -894,18 +827,7 @@ function trackFileFromTool(state) {
 	const path = extractFilePath(payload);
 	if (!path) return;
 
-	const content =
-		payload?.content || payload?.new_string || payload?.newString || payload?.text || payload?.contents || "";
-	const diff = estimateLineDiff(typeof content === "string" ? content : JSON.stringify(content));
-	const existing = changedFiles.get(path);
-
-	if (existing) {
-		existing.additions += diff.add;
-		existing.deletions += diff.del;
-	} else {
-		changedFiles.set(path, { path, additions: diff.add, deletions: diff.del });
-	}
-
+	changedFiles.add(path);
 	renderFileContext();
 }
 
@@ -914,7 +836,7 @@ function renderFileContext() {
 	const listEl = $("file-context-list");
 	if (!fileContextEl || !countEl || !listEl) return;
 
-	const files = [...changedFiles.values()].sort((a, b) => a.path.localeCompare(b.path));
+	const files = [...changedFiles].sort((a, b) => a.localeCompare(b));
 	if (files.length === 0) {
 		fileContextEl.classList.add("hidden");
 		return;
@@ -923,20 +845,16 @@ function renderFileContext() {
 	fileContextEl.classList.remove("hidden");
 	fileContextEl.classList.toggle("collapsed", fileContextCollapsed);
 	$("file-context-toggle")?.setAttribute("aria-expanded", String(!fileContextCollapsed));
-	countEl.textContent = `${files.length} File${files.length === 1 ? "" : "s"} Changed`;
+	countEl.textContent = `${files.length} File${files.length === 1 ? "" : "s"} Touched`;
 
 	listEl.replaceChildren();
-	for (const file of files) {
+	for (const path of files) {
 		const li = document.createElement("li");
 		li.className = "file-context-item";
 		li.innerHTML = `
 			<span class="file-context-file">
-				<span class="file-context-lang">${fileLangTag(file.path)}</span>
-				<span class="file-context-name">${basename(file.path)}</span>
-			</span>
-			<span class="file-context-diff">
-				<span class="diff-add">+${file.additions}</span>
-				<span class="diff-del">-${file.deletions}</span>
+				<span class="file-context-lang">${fileLangTag(path)}</span>
+				<span class="file-context-name" title="${path}">${basename(path)}</span>
 			</span>`;
 		listEl.appendChild(li);
 	}
