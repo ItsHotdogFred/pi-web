@@ -433,7 +433,30 @@ class PiSession {
 		this.pumpPromise = null;
 		this.replayHandler = null;
 		this.protocolVersion = null;
+		this.pendingModelId = null;
 		this.toolTracker = createToolCallTracker();
+	}
+
+	async drainProbeDefaults(probe, timeoutMs = 3000) {
+		const deadline = Date.now() + timeoutMs;
+
+		while (Date.now() < deadline) {
+			try {
+				const msg = await Promise.race([
+					probe.nextUpdate(),
+					new Promise((resolve) => setTimeout(() => resolve(null), 200)),
+				]);
+				if (!msg) continue;
+				if (msg.kind === "session_update") {
+					forwardDefaultsUpdate(msg.update, this.ws);
+					if (msg.update.sessionUpdate === "available_commands_update") {
+						return;
+					}
+				}
+			} catch {
+				break;
+			}
+		}
 	}
 
 	async fetchAgentDefaults(sessions) {
@@ -442,9 +465,11 @@ class PiSession {
 		};
 
 		try {
+			this.replayHandler = replayDefaults;
+
 			if (sessions.length > 0) {
 				const sessionId = pickMostRecentSession(sessions).sessionId;
-				this.replayHandler = replayDefaults;
+				const probe = this.ctx.attachSession({ sessionId });
 				try {
 					const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
 						sessionId,
@@ -452,40 +477,56 @@ class PiSession {
 						mcpServers: [],
 					});
 					sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
+					await this.drainProbeDefaults(probe);
 				} finally {
-					this.replayHandler = null;
+					probe.dispose();
 				}
 				return;
 			}
 
-			const newResponse = await this.ctx.request(acp.methods.agent.session.new, {
-				cwd: PI_CWD,
-				mcpServers: [],
-			});
-			sendModelsFromConfigOptions(this.ws, newResponse.configOptions);
-
-			this.replayHandler = replayDefaults;
+			let probe = null;
 			try {
-				await this.ctx.request(acp.methods.agent.session.load, {
-					sessionId: newResponse.sessionId,
-					cwd: PI_CWD,
-					mcpServers: [],
-				});
+				probe = await this.ctx.buildSession(PI_CWD).start();
+				sendModelsFromConfigOptions(this.ws, probe.newSessionResponse.configOptions);
+				await this.drainProbeDefaults(probe);
 			} finally {
-				this.replayHandler = null;
-			}
-
-			try {
-				await this.ctx.request(acp.methods.agent.session.delete, {
-					sessionId: newResponse.sessionId,
-				});
-				await this.refreshSessions();
-			} catch {
-				// ignore if delete is unsupported
+				if (probe) {
+					probe.dispose();
+					try {
+						await this.ctx.request(acp.methods.agent.session.delete, {
+							sessionId: probe.sessionId,
+						});
+						await this.refreshSessions();
+					} catch {
+						// ignore if delete is unsupported
+					}
+				}
 			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			console.error("[pi-web] failed to fetch agent defaults:", message);
+		} finally {
+			this.replayHandler = null;
+		}
+	}
+
+	async applyPendingModel() {
+		if (!this.pendingModelId || !this.session) return;
+
+		const value = this.pendingModelId;
+		this.pendingModelId = null;
+
+		try {
+			const response = await this.ctx.request(acp.methods.agent.session.setConfigOption, {
+				sessionId: this.session.sessionId,
+				configId: "model",
+				value,
+			});
+			sendModelsFromConfigOptions(this.ws, response.configOptions);
+		} catch (error) {
+			this.pendingModelId = value;
+			const message = error instanceof Error ? error.message : String(error);
+			sendJson(this.ws, { type: "error", message });
 		}
 	}
 
@@ -578,6 +619,8 @@ class PiSession {
 		this.session = this.ctx.attachSession({ sessionId });
 		this.pumpPromise = this.pumpUpdates();
 
+		await this.applyPendingModel();
+
 		sendJson(this.ws, { type: "session", sessionId });
 		await this.refreshSessions();
 	}
@@ -589,6 +632,7 @@ class PiSession {
 		this.session = await this.ctx.buildSession(PI_CWD).start();
 		sendModelsFromConfigOptions(this.ws, this.session.newSessionResponse.configOptions);
 		this.pumpPromise = this.pumpUpdates();
+		await this.applyPendingModel();
 		sendJson(this.ws, { type: "session", sessionId: this.session.sessionId });
 		await this.refreshSessions();
 	}
@@ -711,12 +755,14 @@ class PiSession {
 	}
 
 	async setModel(value) {
-		if (!this.session) {
-			sendJson(this.ws, { type: "error", message: "Session not ready" });
-			return;
-		}
 		if (!value) {
 			sendJson(this.ws, { type: "error", message: "Model value is required" });
+			return;
+		}
+
+		if (!this.session) {
+			this.pendingModelId = value;
+			sendJson(this.ws, { type: "models", current: value });
 			return;
 		}
 

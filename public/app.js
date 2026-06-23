@@ -1169,6 +1169,9 @@ function renderCommandsList(filter) {
 function setCommands(nextCommands) {
 	commands = Array.isArray(nextCommands) ? nextCommands : [];
 	if (!inlineCommandsEl.classList.contains("hidden")) updateInlineCommands();
+	if (!commandsOverlayEl.classList.contains("hidden")) {
+		renderCommandsList(commandsInputEl.value);
+	}
 }
 
 /* ── WebSocket ── */
