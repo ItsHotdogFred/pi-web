@@ -108,8 +108,49 @@ let creatingSession = false;
 let awaitingNewAgentSession = false;
 let freshDashboardSession = false;
 let pendingDashboardPrompt = null;
+let loadingHistory = false;
+let pendingUserMessage = null;
+let commandsTargetInput = inputEl;
 
 /* ── Utilities ── */
+
+function getActiveInput() {
+	return currentView === "chat" ? chatInputEl : inputEl;
+}
+
+function clearPendingUserMessage() {
+	pendingUserMessage = null;
+}
+
+function flushUserMessage() {
+	if (!pendingUserMessage) return;
+	const { text, images } = pendingUserMessage;
+	if (text || images.length) {
+		finalizeAssistantTurn();
+		addUserMessage(text, images);
+	}
+	clearPendingUserMessage();
+}
+
+function appendUserChunk(msg) {
+	const messageId = msg.messageId ?? null;
+
+	if (pendingUserMessage && messageId && pendingUserMessage.messageId !== messageId) {
+		flushUserMessage();
+	}
+
+	if (!pendingUserMessage) {
+		pendingUserMessage = { messageId, text: "", images: [] };
+	}
+
+	if (msg.text) pendingUserMessage.text += msg.text;
+	if (msg.image?.data && msg.image?.mimeType) {
+		pendingUserMessage.images.push({
+			mimeType: msg.image.mimeType,
+			data: msg.image.data,
+		});
+	}
+}
 
 function basename(path) {
 	if (!path) return "pi-web";
@@ -906,6 +947,7 @@ function renderFileContext() {
 function clearChat() {
 	messagesEl.replaceChildren();
 	toolCards.clear();
+	clearPendingUserMessage();
 	finalizeAssistantTurn();
 	clearChangedFiles();
 }
@@ -1054,7 +1096,7 @@ function filteredCommands(filter) {
 	);
 }
 
-function applyCommand(command, targetInput = inputEl) {
+function applyCommand(command, targetInput = getActiveInput()) {
 	const suffix = command.hint ? " " : "";
 	closeCommands();
 	inlineCommandsEl.classList.add("hidden");
@@ -1086,16 +1128,30 @@ function renderCommandsInto(listEl, filter, onSelect) {
 }
 
 function updateInlineCommands() {
-	const value = inputEl.value;
-	const show = value.startsWith("/");
+	const target = inputEl;
+	const show = target.value.startsWith("/");
 	inlineCommandsEl.classList.toggle("hidden", !show);
 	if (!show) return;
 
-	const query = value.slice(1).split(/\s/)[0] ?? "";
-	renderCommandsInto(inlineCommandsListEl, query, (command) => applyCommand(command, inputEl));
+	const query = target.value.slice(1).split(/\s/)[0] ?? "";
+	renderCommandsInto(inlineCommandsListEl, query, (command) => applyCommand(command, target));
 }
 
-function openCommands() {
+function updateChatSlashCommands() {
+	if (!chatInputEl.value.startsWith("/")) {
+		if (!commandsInputEl.matches(":focus")) closeCommands();
+		return;
+	}
+
+	commandsTargetInput = chatInputEl;
+	commandsOverlayEl.classList.remove("hidden");
+	const query = chatInputEl.value.slice(1).split(/\s/)[0] ?? "";
+	commandsInputEl.value = query;
+	renderCommandsList(query);
+}
+
+function openCommands(targetInput = getActiveInput()) {
+	commandsTargetInput = targetInput;
 	commandsOverlayEl.classList.remove("hidden");
 	commandsInputEl.value = "";
 	renderCommandsList("");
@@ -1107,7 +1163,7 @@ function closeCommands() {
 }
 
 function renderCommandsList(filter) {
-	renderCommandsInto(commandsListEl, filter, (command) => applyCommand(command, inputEl));
+	renderCommandsInto(commandsListEl, filter, (command) => applyCommand(command, commandsTargetInput));
 }
 
 function setCommands(nextCommands) {
@@ -1125,6 +1181,8 @@ function connect() {
 	awaitingNewAgentSession = false;
 	freshDashboardSession = false;
 	pendingDashboardPrompt = null;
+	loadingHistory = false;
+	clearPendingUserMessage();
 	setStatus("connecting");
 	ws = new WebSocket(wsUrl);
 
@@ -1180,11 +1238,16 @@ function connect() {
 
 			case "clear":
 				clearChat();
+				loadingHistory = false;
 				break;
 
 			case "status":
 				if (msg.cwd) setProjectName(msg.cwd);
 				if (msg.state === "ready") {
+					if (loadingHistory) {
+						flushUserMessage();
+						loadingHistory = false;
+					}
 					gotReady = true;
 					connectionState = "ready";
 					startupBuffer = "";
@@ -1198,6 +1261,7 @@ function connect() {
 					setBusy(true);
 					renderSessions();
 				} else if (msg.state === "loading_history") {
+					loadingHistory = true;
 					setStatus("loading_history");
 				} else if (msg.state === "connecting") {
 					connectionState = "connecting";
@@ -1211,24 +1275,32 @@ function connect() {
 				break;
 
 			case "user":
-			case "user_chunk":
+				if (!loadingHistory) break;
 				finalizeAssistantTurn();
-				addUserMessage(msg.text ?? "");
+				addUserMessage(msg.text ?? "", Array.isArray(msg.images) ? msg.images : []);
+				break;
+
+			case "user_chunk":
+				if (!loadingHistory) break;
+				appendUserChunk(msg);
 				break;
 
 			case "chunk": {
+				if (loadingHistory) flushUserMessage();
 				const chunkText = msg.text ?? "";
 				if (!shouldSkipStartupContent(chunkText)) appendAssistantChunk(chunkText);
 				break;
 			}
 
 			case "thought": {
+				if (loadingHistory) flushUserMessage();
 				const chunkText = msg.text ?? "";
 				if (!shouldSkipStartupContent(chunkText)) appendThoughtChunk(chunkText);
 				break;
 			}
 
 			case "tool":
+				if (loadingHistory) flushUserMessage();
 				updateToolCard(msg);
 				break;
 
@@ -1237,6 +1309,7 @@ function connect() {
 				break;
 
 			case "plan":
+				if (loadingHistory) flushUserMessage();
 				addSystemMessage("system", "Plan", renderMarkdown("```json\n" + JSON.stringify(msg.entries ?? [], null, 2) + "\n```"));
 				break;
 
@@ -1322,11 +1395,6 @@ cancelEl.addEventListener("click", () => {
 });
 
 inputEl.addEventListener("keydown", (e) => {
-	if (e.key === "/" && !inputEl.value) {
-		e.preventDefault();
-		updateInlineCommands();
-		return;
-	}
 	if (e.key === "Enter" && !e.shiftKey) {
 		e.preventDefault();
 		composerEl.requestSubmit();
@@ -1346,7 +1414,10 @@ chatInputEl.addEventListener("keydown", (e) => {
 	}
 });
 
-chatInputEl.addEventListener("input", () => resizeTextarea(chatInputEl));
+chatInputEl.addEventListener("input", () => {
+	resizeTextarea(chatInputEl);
+	updateChatSlashCommands();
+});
 
 $("nav-new-agent").addEventListener("click", () => {
 	startNewAgent();
@@ -1384,7 +1455,7 @@ commandsOverlayEl.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
 	if (e.key === "Escape") closeCommands();
-	if (e.key === "/" && currentView === "dashboard" && document.activeElement !== inputEl) {
+	if (e.key === "/" && document.activeElement !== inputEl && document.activeElement !== chatInputEl) {
 		e.preventDefault();
 		openCommands();
 	}

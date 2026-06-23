@@ -249,12 +249,49 @@ function sendCommands(ws, commands) {
 	});
 }
 
+function forwardUserMessageChunk(update, ws) {
+	const payload = {
+		type: "user_chunk",
+		messageId: update.messageId ?? undefined,
+	};
+
+	const content = update.content;
+	if (content?.type === "text" && content.text) {
+		sendJson(ws, { ...payload, text: content.text });
+	} else if (content?.type === "image" && content.data && content.mimeType) {
+		sendJson(ws, {
+			...payload,
+			image: { mimeType: content.mimeType, data: content.data },
+		});
+	}
+}
+
+function pickMostRecentSession(sessions) {
+	if (!sessions?.length) return null;
+	return sessions.reduce((latest, session) => {
+		const latestTime = latest.updatedAt ? Date.parse(latest.updatedAt) : 0;
+		const sessionTime = session.updatedAt ? Date.parse(session.updatedAt) : 0;
+		return sessionTime > latestTime ? session : latest;
+	});
+}
+
+function forwardDefaultsUpdate(update, ws) {
+	switch (update.sessionUpdate) {
+		case "available_commands_update":
+			sendCommands(ws, update.availableCommands);
+			break;
+		case "config_option_update":
+			sendModelsFromConfigOptions(ws, update.configOptions);
+			break;
+		default:
+			break;
+	}
+}
+
 function forwardSessionUpdate(update, ws, { slimTools = false, toolTracker = null } = {}) {
 	switch (update.sessionUpdate) {
 		case "user_message_chunk":
-			if (update.content?.type === "text" && update.content.text) {
-				sendJson(ws, { type: "user_chunk", text: update.content.text });
-			}
+			forwardUserMessageChunk(update, ws);
 			break;
 		case "agent_message_chunk":
 			if (update.content?.type === "text" && update.content.text) {
@@ -399,6 +436,59 @@ class PiSession {
 		this.toolTracker = createToolCallTracker();
 	}
 
+	async fetchAgentDefaults(sessions) {
+		const replayDefaults = (params) => {
+			forwardDefaultsUpdate(params.update, this.ws);
+		};
+
+		try {
+			if (sessions.length > 0) {
+				const sessionId = pickMostRecentSession(sessions).sessionId;
+				this.replayHandler = replayDefaults;
+				try {
+					const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
+						sessionId,
+						cwd: PI_CWD,
+						mcpServers: [],
+					});
+					sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
+				} finally {
+					this.replayHandler = null;
+				}
+				return;
+			}
+
+			const newResponse = await this.ctx.request(acp.methods.agent.session.new, {
+				cwd: PI_CWD,
+				mcpServers: [],
+			});
+			sendModelsFromConfigOptions(this.ws, newResponse.configOptions);
+
+			this.replayHandler = replayDefaults;
+			try {
+				await this.ctx.request(acp.methods.agent.session.load, {
+					sessionId: newResponse.sessionId,
+					cwd: PI_CWD,
+					mcpServers: [],
+				});
+			} finally {
+				this.replayHandler = null;
+			}
+
+			try {
+				await this.ctx.request(acp.methods.agent.session.delete, {
+					sessionId: newResponse.sessionId,
+				});
+				await this.refreshSessions();
+			} catch {
+				// ignore if delete is unsupported
+			}
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.error("[pi-web] failed to fetch agent defaults:", message);
+		}
+	}
+
 	async start() {
 		sendJson(this.ws, { type: "status", state: "connecting", cwd: PI_CWD });
 
@@ -428,6 +518,8 @@ class PiSession {
 			});
 			const sessions = listResponse.sessions ?? [];
 			sendJson(this.ws, { type: "sessions", sessions });
+
+			await this.fetchAgentDefaults(sessions);
 
 			// Stay on the dashboard until the user opens an existing session or starts a new one.
 			this.sendReady();
