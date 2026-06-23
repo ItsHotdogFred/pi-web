@@ -175,6 +175,35 @@ function truncateWire(value, max = MAX_WIRE_CHARS) {
 	return value;
 }
 
+function sendModelsFromConfigOptions(ws, configOptions) {
+	if (!Array.isArray(configOptions)) return;
+
+	const modelOption = configOptions.find((option) => option.category === "model" || option.id === "model");
+	if (!modelOption || modelOption.type !== "select" || !Array.isArray(modelOption.options)) return;
+
+	sendJson(ws, {
+		type: "models",
+		current: modelOption.currentValue ?? null,
+		models: modelOption.options.map((option) => ({
+			id: option.value,
+			name: option.name,
+			description: option.description ?? null,
+		})),
+	});
+}
+
+function sendCommands(ws, commands) {
+	if (!Array.isArray(commands)) return;
+	sendJson(ws, {
+		type: "commands",
+		commands: commands.map((command) => ({
+			name: command.name,
+			description: command.description ?? "",
+			hint: command.input?.hint ?? null,
+		})),
+	});
+}
+
 function forwardSessionUpdate(update, ws, { slimTools = false } = {}) {
 	switch (update.sessionUpdate) {
 		case "user_message_chunk":
@@ -227,6 +256,12 @@ function forwardSessionUpdate(update, ws, { slimTools = false } = {}) {
 				type: "plan",
 				entries: update.entries ?? [],
 			});
+			break;
+		case "available_commands_update":
+			sendCommands(ws, update.availableCommands);
+			break;
+		case "config_option_update":
+			sendModelsFromConfigOptions(ws, update.configOptions);
 			break;
 		default:
 			break;
@@ -408,11 +443,12 @@ class PiSession {
 		}
 
 		try {
-			await this.ctx.request(acp.methods.agent.session.load, {
+			const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
 				sessionId,
 				cwd: PI_CWD,
 				mcpServers: [],
 			});
+			sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
 		} finally {
 			this.replayHandler = null;
 		}
@@ -428,6 +464,7 @@ class PiSession {
 		await this.disposeActiveSession();
 		sendJson(this.ws, { type: "clear" });
 		this.session = await this.ctx.buildSession(PI_CWD).start();
+		sendModelsFromConfigOptions(this.ws, this.session.newSessionResponse.configOptions);
 		this.pumpPromise = this.pumpUpdates();
 		sendJson(this.ws, { type: "session", sessionId: this.session.sessionId });
 		await this.refreshSessions();
@@ -528,6 +565,29 @@ class PiSession {
 		}
 	}
 
+	async setModel(value) {
+		if (!this.session) {
+			sendJson(this.ws, { type: "error", message: "Session not ready" });
+			return;
+		}
+		if (!value) {
+			sendJson(this.ws, { type: "error", message: "Model value is required" });
+			return;
+		}
+
+		try {
+			const response = await this.ctx.request(acp.methods.agent.session.setConfigOption, {
+				sessionId: this.session.sessionId,
+				configId: "model",
+				value,
+			});
+			sendModelsFromConfigOptions(this.ws, response.configOptions);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			sendJson(this.ws, { type: "error", message });
+		}
+	}
+
 	async cancel() {
 		if (!this.connection || !this.session) return;
 		try {
@@ -591,6 +651,8 @@ async function handleWebSocket(ws) {
 			await pi.switchSession(msg.sessionId);
 		} else if (msg.type === "new_session") {
 			await pi.newSession();
+		} else if (msg.type === "set_model") {
+			await pi.setModel(msg.value);
 		}
 	});
 

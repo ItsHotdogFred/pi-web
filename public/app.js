@@ -28,25 +28,17 @@ const commandsOverlayEl = $("commands-overlay");
 const commandsInputEl = $("commands-input");
 const commandsListEl = $("commands-list");
 const commandsHintEl = $("commands-hint");
+const inlineCommandsEl = $("inline-commands");
+const inlineCommandsListEl = $("inline-commands-list");
 const fileInputEl = $("file-input");
 const attachBtnEl = $("attach-btn");
 const modelLabelEl = $("model-label");
 
 const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 
-const MODELS = ["Composer 2.5", "Composer 2.5 Fast", "GPT-5.4", "Claude 4.6 Sonnet"];
 const MCPS = ["All MCPs", "Filesystem", "Git", "Browser"];
 const BRANCH_COLORS = ["branch-green", "branch-purple", "branch-orange"];
-const CARD_VARIANTS = ["open", "merged", "running", "code"];
-
-const COMMANDS = [
-	{ name: "Explain codebase", desc: "Understand project structure and key files", prompt: "Explain this codebase — structure, key files, and how things fit together." },
-	{ name: "Fix a bug", desc: "Track down and resolve issues", prompt: "Find and fix a bug in this project. Start by asking me what's broken or scan for likely issues." },
-	{ name: "Add a feature", desc: "Build something new following existing patterns", prompt: "Help me add a new feature. Ask what I want to build, then implement it following existing patterns." },
-	{ name: "Write tests", desc: "Improve test coverage", prompt: "Write tests for the most important parts of this codebase." },
-	{ name: "Start dev server", desc: "Run the development server", prompt: "Start the dev server in tmux and confirm it's running." },
-	{ name: "Review changes", desc: "Review uncommitted or recent changes", prompt: "Review my recent changes and suggest improvements." },
-];
+const CARD_VARIANTS = ["open", "merged", "running"];
 
 let ws = null;
 let busy = false;
@@ -56,8 +48,11 @@ let sessionId = null;
 let sessions = [];
 let searchQuery = "";
 let currentView = "dashboard";
-let selectedModel = MODELS[0];
+let models = [];
+let currentModelId = null;
+let commands = [];
 let gitInfo = { branch: "master", branches: ["master"], project: "pi-web" };
+let lastPrompt = "";
 
 let assistantBlock = null;
 let assistantText = "";
@@ -221,6 +216,26 @@ function sessionTitle(session) {
 	return session.title || "New Agent";
 }
 
+function sessionBranchName(session) {
+	const title = sessionTitle(session);
+	const slug = title
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-|-$/g, "")
+		.slice(0, 40);
+	return slug ? `cursor/${slug}-3cd9` : gitInfo.branch;
+}
+
+function currentModelLabel() {
+	const match = models.find((model) => model.id === currentModelId);
+	return match?.name || modelLabelEl.textContent || "Model";
+}
+
+function modelSubtitleLabel() {
+	const label = currentModelLabel();
+	return label.toLowerCase().replace(/\s+/g, "-");
+}
+
 /* ── Views ── */
 
 function showView(view) {
@@ -319,13 +334,38 @@ function renderDropdownMenu(menuId, items, selected, onSelect) {
 	}
 }
 
-function initDropdowns() {
-	renderDropdownMenu("model-menu", MODELS, selectedModel, (model) => {
-		selectedModel = model;
-		modelLabelEl.textContent = model;
-		renderDropdownMenu("model-menu", MODELS, selectedModel, () => {});
-	});
+function renderModelMenu() {
+	const menu = $("model-menu");
+	menu.replaceChildren();
+	menu.classList.add("model-menu");
 
+	for (const model of models) {
+		const btn = document.createElement("button");
+		btn.type = "button";
+		btn.className = "dropdown-item" + (model.id === currentModelId ? " selected" : "");
+		btn.innerHTML = `<span class="model-option-name">${model.name}</span>${model.description ? `<span class="model-option-desc">${model.description}</span>` : ""}`;
+		btn.addEventListener("click", () => {
+			if (ws?.readyState === WebSocket.OPEN && model.id !== currentModelId) {
+				ws.send(JSON.stringify({ type: "set_model", value: model.id }));
+			}
+			closeAllDropdowns();
+		});
+		menu.appendChild(btn);
+	}
+
+	modelLabelEl.textContent = currentModelLabel();
+}
+
+function setModels(payload) {
+	if (!Array.isArray(payload?.models)) return;
+	models = payload.models;
+	if (payload.current) currentModelId = payload.current;
+	renderModelMenu();
+	renderSessions();
+}
+
+function initDropdowns() {
+	renderModelMenu();
 	renderDropdownMenu("mcps-menu", MCPS, MCPS[0], () => {});
 
 	setupDropdown("model-trigger", "model-menu");
@@ -400,7 +440,7 @@ function renderTodayList() {
 
 		const icon = isRunning ? runningIconSvg() : branchIconSvg(stats.branchColor);
 		const meta = isRunning
-			? `${sessionTitle(session).slice(0, 20)}… ${formatRelativeTime(session.updatedAt)}`
+			? `${formatRelativeTime(session.updatedAt)}`
 			: `+${stats.additions} -${stats.deletions}`;
 
 		btn.innerHTML = `${icon}<span class="today-item-body"><span class="today-item-title">${sessionTitle(session)}</span><span class="today-item-meta">${meta}</span></span>`;
@@ -414,12 +454,16 @@ function renderActivityCardLeft(session, stats, isRunning) {
 	const left = document.createElement("div");
 	left.className = "activity-card-left";
 
-	if (isRunning || stats.variant === "code") {
+	if (isRunning) {
 		left.classList.add("code-preview");
-		left.innerHTML = `
-			<div class="code-line"><span class="code-prompt">$</span> Start dev server in tmux</div>
-			<div class="code-line">npm install</div>
-		`;
+		const preview = lastPrompt || sessionTitle(session);
+		const lines = preview.split("\n").slice(0, 2);
+		left.innerHTML = lines
+			.map((line, index) => {
+				const prefix = index === 0 ? '<span class="code-prompt">$</span> ' : "";
+				return `<div class="code-line">${prefix}${line.trim()}</div>`;
+			})
+			.join("");
 		return left;
 	}
 
@@ -438,11 +482,7 @@ function renderActivityCardLeft(session, stats, isRunning) {
 	const badge = document.createElement("span");
 	badge.className = `activity-badge ${stats.variant}`;
 	const badgeLabels = { open: "Open", merged: "Merged", running: "Running" };
-	badge.textContent = badgeLabels[stats.variant] || "Open";
-
-	if (stats.variant === "open" || stats.variant === "merged") {
-		badge.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="3" cy="5" r="1.5" stroke="currentColor"/><circle cx="7" cy="5" r="1.5" stroke="currentColor"/><path d="M3 5.5h1.5a1 1 0 001-1H7" stroke="currentColor"/></svg> ${badgeLabels[stats.variant]}`;
-	}
+	badge.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="3" cy="5" r="1.5" stroke="currentColor"/><circle cx="7" cy="5" r="1.5" stroke="currentColor"/><path d="M3 5.5h1.5a1 1 0 001-1H7" stroke="currentColor"/></svg> ${badgeLabels[stats.variant] || "Open"}`;
 
 	left.append(statsRow, badge);
 	return left;
@@ -464,6 +504,7 @@ function renderActivityFeed() {
 		const stats = pseudoStats(session.sessionId);
 		const isActive = session.sessionId === sessionId;
 		const isRunning = isActive && busy;
+		const branchName = sessionBranchName(session);
 
 		const card = document.createElement("button");
 		card.type = "button";
@@ -475,15 +516,19 @@ function renderActivityFeed() {
 		const right = document.createElement("div");
 		right.className = "activity-card-right";
 
+		const branch = document.createElement("span");
+		branch.className = "activity-card-branch";
+		branch.textContent = branchName;
+
 		const title = document.createElement("span");
 		title.className = "activity-card-title";
 		title.textContent = sessionTitle(session);
 
 		const subtitle = document.createElement("span");
 		subtitle.className = "activity-card-subtitle";
-		subtitle.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="3" cy="6" r="1.5" stroke="currentColor"/><circle cx="9" cy="6" r="1.5" stroke="currentColor"/><path d="M3 6.5h1.5a1 1 0 001-1H9" stroke="currentColor"/></svg> ${selectedModel.split(" ")[0].toLowerCase()}-${selectedModel.includes("Fast") ? "fast" : "high"} ${gitInfo.project} ${formatRelativeTime(session.updatedAt)}`;
+		subtitle.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="3" cy="6" r="1.5" stroke="currentColor"/><circle cx="9" cy="6" r="1.5" stroke="currentColor"/><path d="M3 6.5h1.5a1 1 0 001-1H9" stroke="currentColor"/></svg> ${modelSubtitleLabel()} ${gitInfo.project} ${formatRelativeTime(session.updatedAt)}`;
 
-		right.append(title, subtitle);
+		right.append(branch, title, subtitle);
 		card.append(left, right);
 
 		card.addEventListener("click", () => openSession(session.sessionId));
@@ -632,6 +677,57 @@ function updateToolCard(msg) {
 
 /* ── Commands palette ── */
 
+function filteredCommands(filter) {
+	const q = filter.trim().toLowerCase().replace(/^\//, "");
+	if (!q) return commands;
+	return commands.filter(
+		(command) =>
+			command.name.toLowerCase().includes(q) ||
+			command.description.toLowerCase().includes(q),
+	);
+}
+
+function applyCommand(command, targetInput = inputEl) {
+	const suffix = command.hint ? " " : "";
+	closeCommands();
+	inlineCommandsEl.classList.add("hidden");
+	targetInput.value = `/${command.name}${suffix}`;
+	targetInput.dispatchEvent(new Event("input"));
+	targetInput.focus();
+}
+
+function renderCommandsInto(listEl, filter, onSelect) {
+	const matches = filteredCommands(filter);
+	listEl.replaceChildren();
+
+	if (matches.length === 0) {
+		const empty = document.createElement("li");
+		empty.innerHTML = `<button type="button" disabled><span class="command-desc">${commands.length ? "No matching commands" : "Waiting for Pi commands…"}</span></button>`;
+		listEl.appendChild(empty);
+		return;
+	}
+
+	for (const command of matches) {
+		const li = document.createElement("li");
+		const btn = document.createElement("button");
+		btn.type = "button";
+		btn.innerHTML = `<span class="command-name">/${command.name}</span><span class="command-desc">${command.description || command.hint || ""}</span>`;
+		btn.addEventListener("click", () => onSelect(command));
+		li.appendChild(btn);
+		listEl.appendChild(li);
+	}
+}
+
+function updateInlineCommands() {
+	const value = inputEl.value;
+	const show = value.startsWith("/");
+	inlineCommandsEl.classList.toggle("hidden", !show);
+	if (!show) return;
+
+	const query = value.slice(1).split(/\s/)[0] ?? "";
+	renderCommandsInto(inlineCommandsListEl, query, (command) => applyCommand(command, inputEl));
+}
+
 function openCommands() {
 	commandsOverlayEl.classList.remove("hidden");
 	commandsInputEl.value = "";
@@ -644,26 +740,12 @@ function closeCommands() {
 }
 
 function renderCommandsList(filter) {
-	const q = filter.trim().toLowerCase();
-	const matches = COMMANDS.filter(
-		(c) => !q || c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q),
-	);
-	commandsListEl.replaceChildren();
+	renderCommandsInto(commandsListEl, filter, (command) => applyCommand(command, inputEl));
+}
 
-	for (const cmd of matches) {
-		const li = document.createElement("li");
-		const btn = document.createElement("button");
-		btn.type = "button";
-		btn.innerHTML = `<span class="command-name">${cmd.name}</span><span class="command-desc">${cmd.desc}</span>`;
-		btn.addEventListener("click", () => {
-			closeCommands();
-			inputEl.value = cmd.prompt;
-			inputEl.dispatchEvent(new Event("input"));
-			inputEl.focus();
-		});
-		li.appendChild(btn);
-		commandsListEl.appendChild(li);
-	}
+function setCommands(nextCommands) {
+	commands = Array.isArray(nextCommands) ? nextCommands : [];
+	if (!inlineCommandsEl.classList.contains("hidden")) updateInlineCommands();
 }
 
 /* ── WebSocket ── */
@@ -697,6 +779,14 @@ function connect() {
 			case "sessions":
 				sessions = Array.isArray(msg.sessions) ? msg.sessions : [];
 				renderSessions();
+				break;
+
+			case "models":
+				setModels(msg);
+				break;
+
+			case "commands":
+				setCommands(msg.commands);
 				break;
 
 			case "session":
@@ -795,6 +885,7 @@ function sendPrompt(text, fromChat = false) {
 	const trimmed = text.trim();
 	if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN || busy) return;
 
+	lastPrompt = trimmed;
 	showView("chat");
 	addUserMessage(trimmed);
 
@@ -829,7 +920,7 @@ cancelEl.addEventListener("click", () => {
 inputEl.addEventListener("keydown", (e) => {
 	if (e.key === "/" && !inputEl.value) {
 		e.preventDefault();
-		openCommands();
+		updateInlineCommands();
 		return;
 	}
 	if (e.key === "Enter" && !e.shiftKey) {
@@ -842,6 +933,7 @@ inputEl.addEventListener("input", () => {
 	resizeTextarea(inputEl);
 	sendEl.classList.toggle("hidden", !inputEl.value.trim());
 	setBusy(busy);
+	updateInlineCommands();
 });
 
 chatInputEl.addEventListener("keydown", (e) => {
