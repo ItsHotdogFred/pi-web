@@ -202,6 +202,7 @@ function createAcpClient(piSession) {
 }
 
 const MAX_WIRE_CHARS = 2000;
+const PRELOAD_SESSION_COUNT = 2;
 
 function truncateWire(value, max = MAX_WIRE_CHARS) {
 	if (value == null) return value;
@@ -470,6 +471,127 @@ class PiSession {
 		this.pendingModelId = null;
 		this.cwd = DEFAULT_CWD;
 		this.toolTracker = createToolCallTracker();
+		this.cachedNewSession = null;
+		this.cachedNewSessionPromise = null;
+		this.historyCache = new Map();
+		this.historyCachePromises = new Map();
+		this.preloadChain = Promise.resolve();
+	}
+
+	historyCacheKey(sessionId) {
+		return `${this.cwd}:${sessionId}`;
+	}
+
+	clearSessionCaches() {
+		if (this.cachedNewSession) {
+			const orphanId = this.cachedNewSession.sessionId;
+			this.cachedNewSession.dispose();
+			this.cachedNewSession = null;
+			if (this.ctx) {
+				void this.ctx
+					.request(acp.methods.agent.session.delete, { sessionId: orphanId })
+					.catch(() => {});
+			}
+		}
+
+		this.cachedNewSessionPromise = null;
+		this.historyCache.clear();
+		this.historyCachePromises.clear();
+		this.preloadChain = Promise.resolve();
+	}
+
+	invalidateHistoryCache(sessionId) {
+		if (!sessionId) return;
+		this.historyCache.delete(this.historyCacheKey(sessionId));
+	}
+
+	schedulePreload(sessionId) {
+		const key = this.historyCacheKey(sessionId);
+		if (this.historyCache.has(key) || this.historyCachePromises.has(key)) return;
+
+		this.preloadChain = this.preloadChain
+			.then(() => this.preloadSessionHistory(sessionId))
+			.catch(() => {});
+	}
+
+	async ensureCachedNewSession() {
+		if (this.closed || !this.ctx || this.cachedNewSession || this.cachedNewSessionPromise) return;
+
+		this.cachedNewSessionPromise = (async () => {
+			try {
+				const session = await this.ctx.buildSession(this.cwd).start();
+				if (!this.closed && !this.cachedNewSession) {
+					this.cachedNewSession = session;
+				} else {
+					session.dispose();
+				}
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.error("[pi-web] failed to precache new session:", message);
+			} finally {
+				this.cachedNewSessionPromise = null;
+			}
+		})();
+
+		await this.cachedNewSessionPromise;
+	}
+
+	async preloadSessionHistory(sessionId) {
+		if (!sessionId || this.closed || !this.ctx) return;
+
+		const key = this.historyCacheKey(sessionId);
+		if (this.historyCache.has(key) || this.historyCachePromises.has(key)) return;
+
+		const promise = (async () => {
+			const updates = [];
+			let configOptions = null;
+			const probe = this.ctx.attachSession({ sessionId });
+
+			this.replayHandler = (params) => {
+				updates.push(params);
+			};
+
+			try {
+				const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
+					sessionId,
+					cwd: this.cwd,
+					mcpServers: [],
+				});
+				configOptions = loadResponse.configOptions;
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.error(`[pi-web] failed to preload session ${sessionId}:`, message);
+				return;
+			} finally {
+				this.replayHandler = null;
+				probe.dispose();
+			}
+
+			if (!this.closed) {
+				this.historyCache.set(key, { updates, configOptions });
+			}
+		})();
+
+		this.historyCachePromises.set(key, promise);
+		try {
+			await promise;
+		} finally {
+			this.historyCachePromises.delete(key);
+		}
+	}
+
+	warmSessionCaches(sessions) {
+		void this.ensureCachedNewSession();
+
+		const sorted = [...sessions].sort((a, b) => {
+			const aTime = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+			const bTime = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+			return bTime - aTime;
+		});
+
+		for (const session of sorted.slice(0, PRELOAD_SESSION_COUNT)) {
+			this.schedulePreload(session.sessionId);
+		}
 	}
 
 	async drainProbeDefaults(probe, timeoutMs = 3000) {
@@ -566,6 +688,7 @@ class PiSession {
 	}
 
 	async disconnectAgent() {
+		this.clearSessionCaches();
 		await this.disposeActiveSession();
 		this.replayHandler = null;
 
@@ -617,6 +740,7 @@ class PiSession {
 
 		await this.fetchAgentDefaults(sessions);
 		this.sendReady();
+		void this.warmSessionCaches(sessions);
 	}
 
 	async start() {
@@ -690,12 +814,28 @@ class PiSession {
 	}
 
 	async loadSession(sessionId, { replay = true } = {}) {
+		const key = this.historyCacheKey(sessionId);
+		const pendingPreload = this.historyCachePromises.get(key);
+		if (pendingPreload) {
+			await pendingPreload.catch(() => {});
+		}
+
 		await this.disposeActiveSession();
 
 		sendJson(this.ws, { type: "clear" });
 		this.toolTracker.reset();
 
-		if (replay) {
+		const cached = replay ? this.historyCache.get(key) : null;
+
+		if (cached) {
+			sendJson(this.ws, { type: "status", state: "loading_history" });
+			for (const params of cached.updates) {
+				forwardSessionUpdate(params.update, this.ws, { toolTracker: this.toolTracker });
+			}
+			if (cached.configOptions) {
+				sendModelsFromConfigOptions(this.ws, cached.configOptions);
+			}
+		} else if (replay) {
 			sendJson(this.ws, { type: "status", state: "loading_history" });
 			this.replayHandler = (params) => {
 				forwardSessionUpdate(params.update, this.ws, { toolTracker: this.toolTracker });
@@ -703,12 +843,20 @@ class PiSession {
 		}
 
 		try {
-			const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
-				sessionId,
-				cwd: this.cwd,
-				mcpServers: [],
-			});
-			sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
+			if (!cached) {
+				const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
+					sessionId,
+					cwd: this.cwd,
+					mcpServers: [],
+				});
+				sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
+			} else {
+				await this.ctx.request(acp.methods.agent.session.load, {
+					sessionId,
+					cwd: this.cwd,
+					mcpServers: [],
+				});
+			}
 		} finally {
 			this.replayHandler = null;
 		}
@@ -718,20 +866,35 @@ class PiSession {
 
 		await this.applyPendingModel();
 
-		sendJson(this.ws, { type: "session", sessionId });
+		sendJson(this.ws, { type: "session", sessionId, cached: Boolean(cached) });
 		await this.refreshSessions();
 	}
 
 	async createSession() {
+		if (this.cachedNewSessionPromise) {
+			await this.cachedNewSessionPromise.catch(() => {});
+		}
+
 		await this.disposeActiveSession();
 		sendJson(this.ws, { type: "clear" });
 		this.toolTracker.reset();
-		this.session = await this.ctx.buildSession(this.cwd).start();
-		sendModelsFromConfigOptions(this.ws, this.session.newSessionResponse.configOptions);
+
+		let cached = false;
+		if (this.cachedNewSession) {
+			this.session = this.cachedNewSession;
+			this.cachedNewSession = null;
+			cached = true;
+			sendModelsFromConfigOptions(this.ws, this.session.newSessionResponse.configOptions);
+		} else {
+			this.session = await this.ctx.buildSession(this.cwd).start();
+			sendModelsFromConfigOptions(this.ws, this.session.newSessionResponse.configOptions);
+		}
+
 		this.pumpPromise = this.pumpUpdates();
 		await this.applyPendingModel();
-		sendJson(this.ws, { type: "session", sessionId: this.session.sessionId });
+		sendJson(this.ws, { type: "session", sessionId: this.session.sessionId, cached });
 		await this.refreshSessions();
+		void this.ensureCachedNewSession();
 	}
 
 	async refreshSessions() {
@@ -739,7 +902,9 @@ class PiSession {
 			const listResponse = await this.ctx.request(acp.methods.agent.session.list, {
 				cwd: this.cwd,
 			});
-			sendJson(this.ws, { type: "sessions", sessions: listResponse.sessions ?? [] });
+			const sessions = listResponse.sessions ?? [];
+			sendJson(this.ws, { type: "sessions", sessions });
+			this.warmSessionCaches(sessions);
 		} catch {
 			// ignore list errors during refresh
 		}
@@ -788,6 +953,7 @@ class PiSession {
 					forwardSessionUpdate(message.update, this.ws, { toolTracker: this.toolTracker });
 				} else if (message.kind === "stop") {
 					this.busy = false;
+					this.invalidateHistoryCache(activeSession.sessionId);
 					sendJson(this.ws, {
 						type: "done",
 						stopReason: message.stopReason,

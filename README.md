@@ -93,6 +93,7 @@ Uses Node's `--watch` flag to restart the bridge on file changes.
 
 - Session sidebar lists Pi sessions for the current project; switch or start new chats from the UI.
 - Click the project name in the header to switch folders (recent paths + manual path entry).
+- New Agent uses a precached empty session for near-instant startup; the last two sessions are preloaded in the background.
 - Tool permissions are auto-approved for the prototype.
 
 ## License
