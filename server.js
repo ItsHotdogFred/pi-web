@@ -1,0 +1,580 @@
+import { spawn } from "node:child_process";
+import { createServer } from "node:http";
+import { readFile, writeFile } from "node:fs/promises";
+import { join, extname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Readable, Writable } from "node:stream";
+import { WebSocketServer } from "ws";
+import * as acp from "@agentclientprotocol/sdk";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const PUBLIC_DIR = join(__dirname, "public");
+const PORT = Number(process.env.PORT || 3847);
+const PI_CWD = process.env.PI_CWD || process.cwd();
+const PI_ACP_COMMAND = process.env.PI_ACP_COMMAND || "npx";
+const PI_ACP_ARGS = process.env.PI_ACP_ARGS
+	? process.env.PI_ACP_ARGS.split(" ")
+	: ["-y", "pi-acp"];
+const PI_ACP_SHELL = process.env.PI_ACP_SHELL === "1" || (process.env.PI_ACP_SHELL !== "0" && process.platform === "win32");
+
+const MIME = {
+	".html": "text/html; charset=utf-8",
+	".css": "text/css; charset=utf-8",
+	".js": "text/javascript; charset=utf-8",
+	".svg": "image/svg+xml",
+	".ico": "image/x-icon",
+};
+
+function sendJson(ws, payload) {
+	if (ws.readyState === ws.OPEN) {
+		ws.send(JSON.stringify(payload));
+	}
+}
+
+function looksLikeToolId(value) {
+	if (typeof value !== "string" || !value) return false;
+	return /^tool_[0-9a-f-]+$/i.test(value) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function prettifyToolName(name) {
+	if (typeof name !== "string" || !name) return undefined;
+	const trimmed = name.trim();
+	if (!trimmed || looksLikeToolId(trimmed)) return undefined;
+
+	const withoutMcp = trimmed.replace(/^mcp_(?:pi_)?/i, "");
+	const aliases = {
+		ffgrep: "grep",
+		fffind: "find",
+		bash: "shell",
+	};
+	return aliases[withoutMcp] ?? withoutMcp;
+}
+
+function toolNameFromRawOutput(rawOutput) {
+	if (rawOutput == null) return undefined;
+	if (typeof rawOutput === "object" && rawOutput !== null) {
+		if ("toolName" in rawOutput) return prettifyToolName(rawOutput.toolName);
+		if ("name" in rawOutput) return prettifyToolName(rawOutput.name);
+	}
+	if (typeof rawOutput === "string") {
+		try {
+			const parsed = JSON.parse(rawOutput);
+			if (parsed && typeof parsed === "object") {
+				return toolNameFromRawOutput(parsed);
+			}
+		} catch {
+			// ignore invalid JSON
+		}
+	}
+	return undefined;
+}
+
+function toolNameFromRawInput(rawInput) {
+	if (rawInput == null) return undefined;
+	if (typeof rawInput === "object" && rawInput !== null) {
+		if ("toolName" in rawInput) return prettifyToolName(rawInput.toolName);
+		if ("name" in rawInput) return prettifyToolName(rawInput.name);
+	}
+	return undefined;
+}
+
+function resolveToolName(update) {
+	const candidates = [
+		update.title,
+		toolNameFromRawOutput(update.rawOutput),
+		toolNameFromRawInput(update.rawInput),
+	];
+	for (const candidate of candidates) {
+		const name = prettifyToolName(candidate);
+		if (name) return name;
+	}
+	return "tool";
+}
+
+function isStartupInfo(text) {
+	return typeof text === "string" && text.includes("## Skills") && text.includes("## Extensions");
+}
+
+function spawnPiAcp() {
+	const child = spawn(PI_ACP_COMMAND, PI_ACP_ARGS, {
+		cwd: PI_CWD,
+		stdio: ["pipe", "pipe", "pipe"],
+		env: process.env,
+		shell: PI_ACP_SHELL,
+	});
+
+	child.stderr?.on("data", (chunk) => {
+		process.stderr.write(`[pi-acp] ${chunk}`);
+	});
+
+	child.on("error", (error) => {
+		console.error("[pi-acp] failed to start:", error.message);
+	});
+
+	return child;
+}
+
+function createAcpClient(piSession) {
+	const app = acp
+		.client({ name: "pi-web" })
+		.onRequest(acp.methods.client.session.requestPermission, (ctx) => {
+			const preferred =
+				ctx.params.options.find((option) => option.kind === "allow_once") ??
+				ctx.params.options.find((option) => option.kind === "allow") ??
+				ctx.params.options[0];
+
+			sendJson(piSession.ws, {
+				type: "permission",
+				tool: ctx.params.toolCall.title,
+				choice: preferred?.name ?? "auto",
+			});
+
+			return {
+				outcome: {
+					outcome: "selected",
+					optionId: preferred.optionId,
+				},
+			};
+		})
+		.onRequest(acp.methods.client.fs.readTextFile, async (ctx) => {
+			const content = await readFile(ctx.params.path, "utf8");
+			return { content };
+		})
+		.onRequest(acp.methods.client.fs.writeTextFile, async (ctx) => {
+			await writeFile(ctx.params.path, ctx.params.content, "utf8");
+			return {};
+		})
+		.onNotification(acp.methods.client.session.update, (ctx) => {
+			if (piSession.replayHandler) {
+				piSession.replayHandler(ctx.params);
+			}
+		});
+
+	return app;
+}
+
+const MAX_WIRE_CHARS = 2000;
+
+function truncateWire(value, max = MAX_WIRE_CHARS) {
+	if (value == null) return value;
+	if (typeof value === "string") {
+		return value.length > max ? `${value.slice(0, max)}…` : value;
+	}
+	if (typeof value === "object") {
+		try {
+			const text = JSON.stringify(value);
+			if (text.length <= max) return value;
+			return { truncated: true, preview: `${text.slice(0, max)}…` };
+		} catch {
+			return value;
+		}
+	}
+	return value;
+}
+
+function forwardSessionUpdate(update, ws, { slimTools = false } = {}) {
+	switch (update.sessionUpdate) {
+		case "user_message_chunk":
+			if (update.content?.type === "text" && update.content.text) {
+				sendJson(ws, { type: "user_chunk", text: update.content.text });
+			}
+			break;
+		case "agent_message_chunk":
+			if (update.content?.type === "text" && update.content.text) {
+				if (isStartupInfo(update.content.text)) break;
+				sendJson(ws, { type: "chunk", text: update.content.text });
+			}
+			break;
+		case "agent_thought_chunk":
+			if (update.content?.type === "text" && update.content.text) {
+				sendJson(ws, { type: "thought", text: update.content.text });
+			}
+			break;
+		case "tool_call": {
+			const toolName = resolveToolName(update);
+			sendJson(ws, {
+				type: "tool",
+				event: "start",
+				id: update.toolCallId,
+				title: toolName,
+				toolName,
+				status: update.status,
+				kind: update.kind,
+				rawInput: slimTools ? undefined : truncateWire(update.rawInput),
+				rawOutput: slimTools ? undefined : truncateWire(update.rawOutput),
+			});
+			break;
+		}
+		case "tool_call_update": {
+			const toolName = resolveToolName(update);
+			sendJson(ws, {
+				type: "tool",
+				event: "update",
+				id: update.toolCallId,
+				status: update.status,
+				title: toolName,
+				toolName,
+				rawInput: slimTools ? undefined : truncateWire(update.rawInput),
+				rawOutput: slimTools ? undefined : truncateWire(update.rawOutput),
+			});
+			break;
+		}
+		case "plan":
+			sendJson(ws, {
+				type: "plan",
+				entries: update.entries ?? [],
+			});
+			break;
+		default:
+			break;
+	}
+}
+
+function pickMostRecentSession(sessions) {
+	if (!sessions?.length) return null;
+	return sessions.reduce((latest, session) => {
+		const latestTime = latest.updatedAt ? Date.parse(latest.updatedAt) : 0;
+		const sessionTime = session.updatedAt ? Date.parse(session.updatedAt) : 0;
+		return sessionTime > latestTime ? session : latest;
+	});
+}
+
+async function serveStatic(req, res) {
+	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+	let pathname = decodeURIComponent(url.pathname);
+	if (pathname === "/") pathname = "/index.html";
+
+	if (pathname === "/marked.min.js") {
+		const markedPath = join(__dirname, "node_modules", "marked", "marked.min.js");
+		try {
+			const body = await readFile(markedPath);
+			res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+			res.end(body);
+			return;
+		} catch {
+			res.writeHead(404).end("Not found");
+			return;
+		}
+	}
+
+	const filePath = join(PUBLIC_DIR, pathname.replace(/^\/+/, ""));
+	if (!filePath.startsWith(PUBLIC_DIR)) {
+		res.writeHead(403).end("Forbidden");
+		return;
+	}
+
+	try {
+		const body = await readFile(filePath);
+		res.writeHead(200, { "Content-Type": MIME[extname(filePath)] ?? "application/octet-stream" });
+		res.end(body);
+	} catch {
+		res.writeHead(404).end("Not found");
+	}
+}
+
+class PiSession {
+	constructor(ws) {
+		this.ws = ws;
+		this.busy = false;
+		this.closed = false;
+		this.agentProcess = null;
+		this.connection = null;
+		this.ctx = null;
+		this.session = null;
+		this.pumpPromise = null;
+		this.replayHandler = null;
+		this.protocolVersion = null;
+	}
+
+	async start() {
+		sendJson(this.ws, { type: "status", state: "connecting", cwd: PI_CWD });
+
+		this.agentProcess = spawnPiAcp();
+		const input = Writable.toWeb(this.agentProcess.stdin);
+		const output = Readable.toWeb(this.agentProcess.stdout);
+		const stream = acp.ndJsonStream(input, output);
+
+		const app = createAcpClient(this);
+		this.connection = app.connect(stream);
+		this.ctx = this.connection.agent;
+
+		try {
+			const init = await this.ctx.request(acp.methods.agent.initialize, {
+				protocolVersion: acp.PROTOCOL_VERSION,
+				clientCapabilities: {
+					fs: {
+						readTextFile: true,
+						writeTextFile: true,
+					},
+				},
+			});
+			this.protocolVersion = init.protocolVersion;
+
+			const listResponse = await this.ctx.request(acp.methods.agent.session.list, {
+				cwd: PI_CWD,
+			});
+			const sessions = listResponse.sessions ?? [];
+			sendJson(this.ws, { type: "sessions", sessions });
+
+			const mostRecent = pickMostRecentSession(sessions);
+			if (mostRecent) {
+				await this.loadSession(mostRecent.sessionId, { replay: false });
+			} else {
+				await this.createSession();
+			}
+
+			this.sendReady();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			sendJson(this.ws, { type: "status", state: "error", message });
+			throw error;
+		}
+	}
+
+	sendReady() {
+		sendJson(this.ws, {
+			type: "status",
+			state: "ready",
+			sessionId: this.session?.sessionId,
+			protocolVersion: this.protocolVersion,
+			cwd: PI_CWD,
+		});
+	}
+
+	async disposeActiveSession() {
+		if (!this.session) return;
+
+		const oldSession = this.session;
+		this.session = null;
+		oldSession.dispose();
+
+		await this.pumpPromise?.catch(() => {});
+		this.pumpPromise = null;
+	}
+
+	async loadSession(sessionId, { replay = true } = {}) {
+		await this.disposeActiveSession();
+
+		sendJson(this.ws, { type: "clear" });
+
+		if (replay) {
+			sendJson(this.ws, { type: "status", state: "loading_history" });
+			this.replayHandler = (params) => {
+				forwardSessionUpdate(params.update, this.ws, { slimTools: true });
+			};
+		}
+
+		try {
+			await this.ctx.request(acp.methods.agent.session.load, {
+				sessionId,
+				cwd: PI_CWD,
+				mcpServers: [],
+			});
+		} finally {
+			this.replayHandler = null;
+		}
+
+		this.session = this.ctx.attachSession({ sessionId });
+		this.pumpPromise = this.pumpUpdates();
+
+		sendJson(this.ws, { type: "session", sessionId });
+		await this.refreshSessions();
+	}
+
+	async createSession() {
+		await this.disposeActiveSession();
+		sendJson(this.ws, { type: "clear" });
+		this.session = await this.ctx.buildSession(PI_CWD).start();
+		this.pumpPromise = this.pumpUpdates();
+		sendJson(this.ws, { type: "session", sessionId: this.session.sessionId });
+		await this.refreshSessions();
+	}
+
+	async refreshSessions() {
+		try {
+			const listResponse = await this.ctx.request(acp.methods.agent.session.list, {
+				cwd: PI_CWD,
+			});
+			sendJson(this.ws, { type: "sessions", sessions: listResponse.sessions ?? [] });
+		} catch {
+			// ignore list errors during refresh
+		}
+	}
+
+	async switchSession(sessionId) {
+		if (!sessionId) {
+			sendJson(this.ws, { type: "error", message: "sessionId is required" });
+			return;
+		}
+		if (this.busy) {
+			sendJson(this.ws, { type: "error", message: "Pi is still working on the previous message" });
+			return;
+		}
+
+		try {
+			await this.loadSession(sessionId);
+			this.sendReady();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			sendJson(this.ws, { type: "error", message });
+		}
+	}
+
+	async newSession() {
+		if (this.busy) {
+			sendJson(this.ws, { type: "error", message: "Pi is still working on the previous message" });
+			return;
+		}
+
+		try {
+			await this.createSession();
+			this.sendReady();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			sendJson(this.ws, { type: "error", message });
+		}
+	}
+
+	async pumpUpdates() {
+		const activeSession = this.session;
+		while (!this.closed && this.session === activeSession && activeSession) {
+			try {
+				const message = await activeSession.nextUpdate();
+				if (message.kind === "session_update") {
+					forwardSessionUpdate(message.update, this.ws);
+				} else if (message.kind === "stop") {
+					this.busy = false;
+					sendJson(this.ws, {
+						type: "done",
+						stopReason: message.stopReason,
+					});
+				}
+			} catch (error) {
+				if (this.closed || this.session !== activeSession) break;
+				const msg = error instanceof Error ? error.message : String(error);
+				sendJson(this.ws, { type: "error", message: msg });
+				break;
+			}
+		}
+	}
+
+	async handlePrompt(text) {
+		if (!this.session) {
+			sendJson(this.ws, { type: "error", message: "Session not ready" });
+			return;
+		}
+		if (this.busy) {
+			sendJson(this.ws, { type: "error", message: "Pi is still working on the previous message" });
+			return;
+		}
+
+		const trimmed = text.trim();
+		if (!trimmed) return;
+
+		this.busy = true;
+		sendJson(this.ws, { type: "status", state: "busy" });
+
+		try {
+			await this.session.prompt(trimmed);
+			void this.refreshSessions();
+		} catch (error) {
+			this.busy = false;
+			const message = error instanceof Error ? error.message : String(error);
+			sendJson(this.ws, { type: "error", message });
+			sendJson(this.ws, { type: "status", state: "ready" });
+		}
+	}
+
+	async cancel() {
+		if (!this.connection || !this.session) return;
+		try {
+			await this.connection.agent.notify(acp.methods.agent.session.cancel, {
+				sessionId: this.session.sessionId,
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			sendJson(this.ws, { type: "error", message });
+		}
+	}
+
+	async close() {
+		this.closed = true;
+		this.replayHandler = null;
+
+		if (this.session) {
+			this.session.dispose();
+			this.session = null;
+		}
+
+		if (this.connection) {
+			this.connection.close();
+		}
+
+		if (this.agentProcess && !this.agentProcess.killed) {
+			this.agentProcess.kill();
+		}
+
+		await this.pumpPromise?.catch(() => {});
+	}
+}
+
+async function handleWebSocket(ws) {
+	const pi = new PiSession(ws);
+
+	try {
+		await pi.start();
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error("[pi-web] failed to start pi-acp:", message);
+		sendJson(ws, { type: "status", state: "error", message });
+		ws.close();
+		return;
+	}
+
+	ws.on("message", async (raw) => {
+		let msg;
+		try {
+			msg = JSON.parse(String(raw));
+		} catch {
+			sendJson(ws, { type: "error", message: "Invalid JSON message" });
+			return;
+		}
+
+		if (msg.type === "prompt") {
+			await pi.handlePrompt(msg.text ?? "");
+		} else if (msg.type === "cancel") {
+			await pi.cancel();
+		} else if (msg.type === "switch_session") {
+			await pi.switchSession(msg.sessionId);
+		} else if (msg.type === "new_session") {
+			await pi.newSession();
+		}
+	});
+
+	ws.on("close", () => {
+		void pi.close();
+	});
+}
+
+const server = createServer(serveStatic);
+const wss = new WebSocketServer({ server, path: "/ws" });
+
+wss.on("connection", (ws) => {
+	void handleWebSocket(ws);
+});
+
+server.on("error", (err) => {
+	if (err.code === "EADDRINUSE") {
+		console.error(`Port ${PORT} is already in use (another pi-web instance may be running).`);
+		console.error(`Stop it or use a different port: PORT=3848 npm start`);
+	} else {
+		console.error(err);
+	}
+	process.exit(1);
+});
+
+server.listen(PORT, () => {
+	console.log(`pi-web listening on http://localhost:${PORT}`);
+	console.log(`project cwd: ${PI_CWD}`);
+	console.log(`pi-acp: ${PI_ACP_COMMAND} ${PI_ACP_ARGS.join(" ")}`);
+});
