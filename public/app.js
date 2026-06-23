@@ -1102,6 +1102,11 @@ function setCommands(nextCommands) {
 function connect() {
 	lastError = "";
 	gotReady = false;
+	sessionId = null;
+	creatingSession = false;
+	awaitingNewAgentSession = false;
+	freshDashboardSession = false;
+	pendingDashboardPrompt = null;
 	setStatus("connecting");
 	ws = new WebSocket(wsUrl);
 
@@ -1168,10 +1173,8 @@ function connect() {
 					startupSuppressed = false;
 					setStatus("ready");
 					setBusy(false);
-					if (msg.sessionId) {
-						sessionId = msg.sessionId;
-						renderSessions();
-					}
+					sessionId = msg.sessionId ?? null;
+					renderSessions();
 				} else if (msg.state === "busy") {
 					setStatus("busy");
 					setBusy(true);
@@ -1273,7 +1276,7 @@ function sendPrompt(text, fromChat = false) {
 		previewUrl,
 	}));
 
-	if (!fromChat && !freshDashboardSession) {
+	if (!fromChat && (!sessionId || !freshDashboardSession)) {
 		pendingDashboardPrompt = { text: trimmed, images };
 		awaitingNewAgentSession = true;
 		if (!creatingSession) newSession();

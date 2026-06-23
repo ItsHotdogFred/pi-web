@@ -268,15 +268,6 @@ function forwardSessionUpdate(update, ws, { slimTools = false } = {}) {
 	}
 }
 
-function pickMostRecentSession(sessions) {
-	if (!sessions?.length) return null;
-	return sessions.reduce((latest, session) => {
-		const latestTime = latest.updatedAt ? Date.parse(latest.updatedAt) : 0;
-		const sessionTime = session.updatedAt ? Date.parse(session.updatedAt) : 0;
-		return sessionTime > latestTime ? session : latest;
-	});
-}
-
 async function gitBranch(cwd) {
 	try {
 		const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd });
@@ -394,13 +385,7 @@ class PiSession {
 			const sessions = listResponse.sessions ?? [];
 			sendJson(this.ws, { type: "sessions", sessions });
 
-			const mostRecent = pickMostRecentSession(sessions);
-			if (mostRecent) {
-				await this.loadSession(mostRecent.sessionId, { replay: false });
-			} else {
-				await this.createSession();
-			}
-
+			// Stay on the dashboard until the user opens an existing session or starts a new one.
 			this.sendReady();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -539,13 +524,19 @@ class PiSession {
 	}
 
 	async handlePrompt(text, images = []) {
-		if (!this.session) {
-			sendJson(this.ws, { type: "error", message: "Session not ready" });
-			return;
-		}
 		if (this.busy) {
 			sendJson(this.ws, { type: "error", message: "Pi is still working on the previous message" });
 			return;
+		}
+
+		if (!this.session) {
+			try {
+				await this.createSession();
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				sendJson(this.ws, { type: "error", message });
+				return;
+			}
 		}
 
 		const trimmed = (text ?? "").trim();
