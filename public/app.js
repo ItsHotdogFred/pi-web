@@ -55,6 +55,26 @@ let gitInfo = { branch: "master", branches: ["master"], project: "pi-web" };
 let pendingProjectPath = null;
 let lastPrompt = "";
 let fileContextCollapsed = false;
+let viewTransitioning = false;
+let animateActivityFeed = false;
+
+function prefersReducedMotion() {
+	return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function animateEnter(el, className = "anim-fade-up", { delay = 0 } = {}) {
+	if (!el || batchHistoryMode || prefersReducedMotion()) return;
+	if (delay > 0) el.style.animationDelay = `${delay}ms`;
+	el.classList.add(className);
+	el.addEventListener(
+		"animationend",
+		() => {
+			el.classList.remove(className);
+			el.style.animationDelay = "";
+		},
+		{ once: true },
+	);
+}
 
 const CONTEXT_DIAL_CIRCUMFERENCE = 43.982;
 let contextUsage = { used: null, size: null, percent: null, breakdown: [] };
@@ -563,14 +583,61 @@ function syncModelLabels() {
 
 /* ── Views ── */
 
-function showView(view) {
+function showView(view, { animate = true } = {}) {
+	const prevView = currentView;
+	if (view === prevView && !viewTransitioning) {
+		document.querySelectorAll(".nav-item").forEach((el) => {
+			el.classList.toggle("active", el.dataset.view === view);
+		});
+		sidebarEl.classList.remove("open");
+		renderContextUsage();
+		return;
+	}
+
 	currentView = view;
-	dashboardViewEl.classList.toggle("hidden", view !== "dashboard");
-	chatViewEl.classList.toggle("hidden", view !== "chat");
+	if (view === "dashboard") animateActivityFeed = animate;
+
 	document.querySelectorAll(".nav-item").forEach((el) => {
 		el.classList.toggle("active", el.dataset.view === view);
 	});
 	sidebarEl.classList.remove("open");
+
+	const fromEl = prevView === "dashboard" ? dashboardViewEl : chatViewEl;
+	const toEl = view === "dashboard" ? dashboardViewEl : chatViewEl;
+
+	if (!animate || prefersReducedMotion()) {
+		dashboardViewEl.classList.toggle("hidden", view !== "dashboard");
+		chatViewEl.classList.toggle("hidden", view !== "chat");
+		if (view === "dashboard") renderActivityFeed();
+		renderContextUsage();
+		return;
+	}
+
+	viewTransitioning = true;
+	fromEl.classList.add("view-leaving");
+
+	fromEl.addEventListener(
+		"animationend",
+		() => {
+			fromEl.classList.remove("view-leaving");
+			fromEl.classList.add("hidden");
+
+			toEl.classList.remove("hidden");
+			toEl.classList.add("view-entering");
+
+			toEl.addEventListener(
+				"animationend",
+				() => {
+					toEl.classList.remove("view-entering");
+					viewTransitioning = false;
+					if (view === "dashboard") renderActivityFeed();
+				},
+				{ once: true },
+			);
+		},
+		{ once: true },
+	);
+
 	renderContextUsage();
 }
 
@@ -1107,7 +1174,8 @@ function renderActivityFeed() {
 		return;
 	}
 
-	for (const session of list) {
+	for (let i = 0; i < list.length; i++) {
+		const session = list[i];
 		const isActive = session.sessionId === sessionId;
 		const isRunning = isActive && busy;
 		const status = sessionStatus(session, { isActive, isRunning });
@@ -1135,7 +1203,13 @@ function renderActivityFeed() {
 
 		card.addEventListener("click", () => openSession(session.sessionId));
 		activityFeedEl.appendChild(card);
+
+		if (animateActivityFeed) {
+			animateEnter(card, "anim-fade-up", { delay: i * 40 });
+		}
 	}
+
+	animateActivityFeed = false;
 }
 
 function renderSessions() {
@@ -1222,12 +1296,14 @@ function renderFileContext() {
 	if (!fileContextEl || !countEl || !listEl) return;
 
 	const files = [...changedFiles].sort((a, b) => a.localeCompare(b));
+	const wasHidden = fileContextEl.classList.contains("hidden");
 	if (files.length === 0) {
 		fileContextEl.classList.add("hidden");
 		return;
 	}
 
 	fileContextEl.classList.remove("hidden");
+	if (wasHidden) animateEnter(fileContextEl, "anim-fade-up");
 	fileContextEl.classList.toggle("collapsed", fileContextCollapsed);
 	$("file-context-toggle")?.setAttribute("aria-expanded", String(!fileContextCollapsed));
 	countEl.textContent = `${files.length} File${files.length === 1 ? "" : "s"} Touched`;
@@ -1353,6 +1429,7 @@ function addUserMessage(text, images = []) {
 	const textHtml = text ? `<div class="msg-content">${renderMarkdown(text)}</div>` : "";
 	article.innerHTML = `${imagesHtml}${textHtml}`;
 	messagesEl.appendChild(article);
+	animateEnter(article, "anim-fade-up");
 	scrollToBottom();
 }
 
@@ -1373,6 +1450,7 @@ function addSystemMessage(kind, label, html) {
 	const labelHtml = label ? `<span class="msg-label">${label}</span>` : "";
 	article.innerHTML = `${labelHtml}<div class="msg-content">${html}</div>`;
 	appendChatNode(article);
+	animateEnter(article, "anim-fade-up");
 	return article;
 }
 
@@ -1436,6 +1514,7 @@ function createToolCard(id) {
 	});
 
 	appendChatNode(card, { beforeStreaming: !batchHistoryMode });
+	animateEnter(card, "anim-fade-up");
 
 	const state = { el: card, title: null, toolName: null, kind: null, rawInput: null, rawOutput: null, status: "running" };
 	toolCards.set(id, state);
@@ -1523,8 +1602,11 @@ function renderCommandsInto(listEl, filter, onSelect) {
 
 function updateSlashCommands(targetInput, containerEl, listEl) {
 	const show = targetInput.value.startsWith("/");
+	const wasHidden = containerEl.classList.contains("hidden");
 	containerEl.classList.toggle("hidden", !show);
 	if (!show) return;
+
+	if (wasHidden) animateEnter(containerEl, "anim-fade-down");
 
 	const query = targetInput.value.slice(1).split(/\s/)[0] ?? "";
 	renderCommandsInto(listEl, query, (command) => applyCommand(command, targetInput));
@@ -1920,4 +2002,4 @@ initDropdowns();
 initContextDialPopover();
 fetchGitInfo();
 connect();
-showView("dashboard");
+showView("dashboard", { animate: false });

@@ -264,6 +264,15 @@ input {
 	overflow: hidden;
 }
 
+.view.view-leaving {
+	animation: view-exit 0.18s ease forwards;
+	pointer-events: none;
+}
+
+.view.view-entering {
+	animation: view-enter 0.24s ease both;
+}
+
 /* ── Dashboard header ── */
 
 .page-header {
@@ -452,6 +461,11 @@ input {
 	border-radius: 10px;
 	background: #161616;
 	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+	transform-origin: top left;
+}
+
+.dropdown-menu:not(.hidden) {
+	animation: scale-in 0.16s ease both;
 }
 
 .dropdown-item {
@@ -621,6 +635,11 @@ input {
 	border-radius: 10px;
 	background: #1a1a1a;
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+	transform-origin: bottom left;
+}
+
+.context-popover:not(.hidden) {
+	animation: scale-in 0.16s ease both;
 }
 
 .context-popover-header {
@@ -682,6 +701,7 @@ input {
 	height: 100%;
 	border-radius: inherit;
 	background: var(--accent);
+	transition: width 0.35s ease;
 }
 
 .context-breakdown-value {
@@ -877,6 +897,7 @@ input {
 	overflow: hidden;
 	border: 1px solid var(--border);
 	background: #0f0f0f;
+	animation: fade-up 0.2s ease both;
 }
 
 .attachment-chip img {
@@ -989,6 +1010,11 @@ input {
 	border-radius: 10px;
 	background: #0f0f0f;
 	overflow: hidden;
+	transform-origin: top center;
+}
+
+.inline-commands.anim-fade-down {
+	animation: fade-down 0.18s ease both;
 }
 
 .inline-commands-list {
@@ -1070,14 +1096,19 @@ input {
 	border-radius: 10px;
 	background: transparent;
 	cursor: pointer;
-	transition: background 0.12s, border-color 0.12s, box-shadow 0.15s;
+	transition: background 0.12s, border-color 0.12s, box-shadow 0.15s, transform 0.15s ease;
 	text-align: left;
 	width: 100%;
+}
+
+.activity-card.anim-fade-up {
+	animation: fade-up 0.28s ease both;
 }
 
 .activity-card:hover {
 	background: rgba(255, 255, 255, 0.02);
 	border-color: var(--border);
+	transform: translateY(-1px);
 }
 
 .activity-card.selected {
@@ -1334,6 +1365,11 @@ input {
 	max-width: 100%;
 }
 
+.msg.anim-fade-up,
+.tool-card.anim-fade-up {
+	animation: fade-up 0.3s ease both;
+}
+
 .msg-user {
 	padding: 0.75rem 0;
 }
@@ -1497,13 +1533,23 @@ input {
 }
 
 .tool-body {
-	display: none;
-	border-top: 1px solid var(--border-subtle);
-	padding: 0.65rem 0.85rem;
+	max-height: 0;
+	overflow: hidden;
+	opacity: 0;
+	border-top: 1px solid transparent;
+	padding: 0 0.85rem;
+	transition:
+		max-height 0.3s ease,
+		opacity 0.22s ease,
+		padding 0.25s ease,
+		border-color 0.2s ease;
 }
 
 .tool-card.expanded .tool-body {
-	display: block;
+	max-height: 800px;
+	opacity: 1;
+	border-top-color: var(--border-subtle);
+	padding: 0.65rem 0.85rem;
 }
 
 .tool-section + .tool-section {
@@ -1556,6 +1602,10 @@ input {
 	overflow: hidden;
 }
 
+.file-context.anim-fade-up {
+	animation: fade-up 0.22s ease both;
+}
+
 .file-context-header {
 	display: flex;
 	align-items: center;
@@ -1585,13 +1635,24 @@ input {
 	transform: rotate(-90deg);
 }
 
-.file-context.collapsed .file-context-body {
-	display: none;
-}
-
 .file-context-body {
 	border-top: 1px solid var(--border-subtle);
 	padding: 0.35rem 0;
+	max-height: 320px;
+	overflow: hidden;
+	opacity: 1;
+	transition:
+		max-height 0.28s ease,
+		opacity 0.2s ease,
+		padding 0.25s ease,
+		border-color 0.2s ease;
+}
+
+.file-context.collapsed .file-context-body {
+	max-height: 0;
+	opacity: 0;
+	padding: 0;
+	border-top-color: transparent;
 }
 
 .file-context-list {
@@ -1727,6 +1788,73 @@ input {
 .command-desc {
 	font-size: 0.75rem;
 	color: var(--muted);
+}
+
+/* ── Animations ── */
+
+@keyframes fade-up {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes fade-down {
+	from {
+		opacity: 0;
+		transform: translateY(-8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes scale-in {
+	from {
+		opacity: 0;
+		transform: translateY(-6px) scale(0.97);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+@keyframes view-enter {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes view-exit {
+	from {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	to {
+		opacity: 0;
+		transform: translateY(-6px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
 }
 
 /* ── Scrollbar (hidden, scroll still works) ── */
