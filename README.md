@@ -1,5 +1,7 @@
 # pi-web
 
+https://github.com/user-attachments/assets/cf3af33d-ee4e-444e-8052-be527ea0a263
+
 > Pi in the browser. Same agent, fewer terminal tabs.
 
 You know the drill. Pi is in the terminal. You're in the browser — docs, GitHub, Stack Overflow, the thing you were actually trying to read. You alt-tab back, scroll through tool output, lose the thread, alt-tab again. The agent works. Your attention doesn't.
