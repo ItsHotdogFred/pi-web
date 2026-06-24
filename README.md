@@ -26,36 +26,13 @@ Pi reads the code, runs the tools, streams the answer. You never leave the tab.
 
 ---
 
-## Stories
+## Just works
 
-These are the sessions pi-web is built for. Names changed; the workflows aren't.
+The CLI gets the job done until you need to do normal things.
 
-### The midnight handoff
+Paste a stack trace — line wraps and scrollback get in the way. Share a screenshot — save it, type a path, hope Pi finds it. Read a long reply — scroll monospace walls of text and copy by hand.
 
-Maya ships a feature at 11pm and opens a fresh agent: *"Add a migration for the new `teams` table and wire it into the signup flow."* She watches the tool cards tick by — `read`, `edit`, `bash` — then closes the laptop.
-
-Next morning she opens pi-web, clicks yesterday's session in the activity feed (aurora thumbnail, same as she left it), and types: *"Run the migration and fix whatever tests broke."* Same session, same context, no archaeology in `~/.pi/agent/sessions`.
-
-### The screenshot bug
-
-Leo gets a Slack message with a screenshot of a broken layout. He drops the image into the composer, adds *"this breaks below 768px — fix the header"*, and sends. Pi sees the image, greps the CSS, patches the flex rules. The file-context panel lists every path Pi touched; Leo clicks through without asking *"which files did you change?"*
-
-### The context check
-
-An hour into a refactor, the context dial turns amber. Priya hovers it:
-
-| Part | Tokens |
-|------|-------:|
-| System prompt | 612 |
-| Skills | 4,180 |
-| Project context | 2,940 |
-| Conversation | 38,200 |
-
-She starts a new session for the next sub-task before Pi starts forgetting the beginning of the thread. The dial is a fuel gauge, not a surprise bill.
-
-### The wrong repo
-
-Devin meant to work on `api-gateway` but pi-web opened on `pi-web` because that's where he ran `npm start`. He clicks the project name, picks `api-gateway` from recents, and the sidebar repopulates with that repo's sessions. One UI, many projects — no second server instance.
+pi-web is the boring fix: paste what you have, drop images into the composer, read rendered markdown, grab a code block in one selection. Same agent underneath. The parts that never felt right in a terminal just work the way you'd expect.
 
 ---
 
