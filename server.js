@@ -12,11 +12,14 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(__dirname, "public");
 const PORT = Number(process.env.PORT || 3847);
 const DEFAULT_CWD = process.env.PI_CWD || process.cwd();
-const PI_ACP_COMMAND = process.env.PI_ACP_COMMAND || "npx";
+const PI_ACP_ENTRY = join(__dirname, "node_modules", "pi-acp", "dist", "index.js");
+const PI_ACP_COMMAND = process.env.PI_ACP_COMMAND || process.execPath;
 const PI_ACP_ARGS = process.env.PI_ACP_ARGS
 	? process.env.PI_ACP_ARGS.split(" ")
-	: ["-y", "pi-acp"];
-const PI_ACP_SHELL = process.env.PI_ACP_SHELL === "1" || (process.env.PI_ACP_SHELL !== "0" && process.platform === "win32");
+	: [PI_ACP_ENTRY];
+const PI_ACP_SHELL =
+	process.env.PI_ACP_SHELL === "1" ||
+	(process.env.PI_ACP_SHELL !== "0" && process.platform === "win32" && PI_ACP_COMMAND === "npx");
 
 const execFileAsync = promisify(execFile);
 
@@ -147,7 +150,10 @@ function spawnPiAcp(cwd) {
 	const child = spawn(PI_ACP_COMMAND, PI_ACP_ARGS, {
 		cwd,
 		stdio: ["pipe", "pipe", "pipe"],
-		env: process.env,
+		env: {
+			...process.env,
+			PI_ACP_ENABLE_EXTENSION_COMMANDS: process.env.PI_ACP_ENABLE_EXTENSION_COMMANDS ?? "1",
+		},
 		shell: PI_ACP_SHELL,
 	});
 
@@ -596,6 +602,7 @@ class PiSession {
 
 	async drainProbeDefaults(probe, timeoutMs = 3000) {
 		const deadline = Date.now() + timeoutMs;
+		let lastCommandUpdateAt = 0;
 
 		while (Date.now() < deadline) {
 			try {
@@ -603,11 +610,16 @@ class PiSession {
 					probe.nextUpdate(),
 					new Promise((resolve) => setTimeout(() => resolve(null), 200)),
 				]);
-				if (!msg) continue;
+				if (!msg) {
+					if (lastCommandUpdateAt && Date.now() - lastCommandUpdateAt > 500) {
+						return;
+					}
+					continue;
+				}
 				if (msg.kind === "session_update") {
 					forwardDefaultsUpdate(msg.update, this.ws);
 					if (msg.update.sessionUpdate === "available_commands_update") {
-						return;
+						lastCommandUpdateAt = Date.now();
 					}
 				}
 			} catch {

@@ -54,6 +54,7 @@ let modelSearchTimer = null;
 let activeModelScope = "dashboard";
 let commands = [];
 let gitInfo = { branch: "master", branches: ["master"], project: "pi-web" };
+let pendingProjectPath = null;
 let lastPrompt = "";
 let fileContextCollapsed = false;
 
@@ -411,6 +412,7 @@ function renderProjectMenu() {
 	if (!list) return;
 
 	list.replaceChildren();
+	clearProjectPathError();
 	const recent = loadRecentProjects();
 	const current = cwd || gitInfo.path;
 
@@ -436,6 +438,20 @@ function renderProjectMenu() {
 	}
 }
 
+function clearProjectPathError() {
+	const errorEl = $("project-path-error");
+	if (!errorEl) return;
+	errorEl.textContent = "";
+	errorEl.classList.add("hidden");
+}
+
+function showProjectPathError(message) {
+	const errorEl = $("project-path-error");
+	if (!errorEl) return;
+	errorEl.textContent = message;
+	errorEl.classList.remove("hidden");
+}
+
 function chooseProject(path) {
 	closeAllDropdowns();
 	if (!path || path === cwd) return;
@@ -443,9 +459,30 @@ function chooseProject(path) {
 }
 
 function sendProjectPath(path) {
-	const trimmed = path.trim();
-	if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN || busy) return;
+	const trimmed = path.trim().replace(/^["']|["']$/g, "");
+	if (!trimmed) {
+		showProjectPathError("Enter an absolute folder path.");
+		return;
+	}
+	if (!ws || ws.readyState !== WebSocket.OPEN) {
+		showProjectPathError("Not connected yet. Wait for Ready, then try again.");
+		return;
+	}
+	if (busy) {
+		showProjectPathError("Pi is still working. Wait for it to finish, then try again.");
+		return;
+	}
+
+	clearProjectPathError();
+	closeAllDropdowns();
+	pendingProjectPath = trimmed;
 	ws.send(JSON.stringify({ type: "set_cwd", path: trimmed }));
+}
+
+function reopenProjectMenu() {
+	renderProjectMenu();
+	$("project-menu")?.classList.remove("hidden");
+	$("project-dropdown")?.classList.add("is-open");
 }
 
 function resetForProjectSwitch(nextCwd) {
@@ -458,6 +495,7 @@ function resetForProjectSwitch(nextCwd) {
 	awaitingNewAgentSession = false;
 	freshDashboardSession = false;
 	pendingDashboardPrompt = null;
+	pendingProjectPath = null;
 	clearChat();
 	showView("dashboard");
 	if (nextCwd) setProjectName(nextCwd);
@@ -591,9 +629,11 @@ function initDropdowns() {
 		e.preventDefault();
 		const input = $("project-path-input");
 		if (!input) return;
-		sendProjectPath(input.value);
-		input.value = "";
+		const path = input.value;
+		sendProjectPath(path);
+		if (path.trim()) input.value = "";
 	});
+	$("project-path-input")?.addEventListener("input", clearProjectPathError);
 
 	document.addEventListener("click", closeAllDropdowns);
 }
@@ -1251,6 +1291,8 @@ function connect() {
 					setProjectName(msg.path);
 					rememberProject(msg.path);
 				}
+				pendingProjectPath = null;
+				clearProjectPathError();
 				syncGitContext();
 				renderProjectMenu();
 				break;
@@ -1312,6 +1354,11 @@ function connect() {
 					startupSuppressed = false;
 					setStatus("connecting");
 				} else if (msg.state === "error") {
+					if (pendingProjectPath) {
+						showProjectPathError(msg.message ?? "Could not open that folder.");
+						reopenProjectMenu();
+						pendingProjectPath = null;
+					}
 					setStatus("error", msg.message ?? "Error");
 				}
 				break;
@@ -1363,6 +1410,11 @@ function connect() {
 				break;
 
 			case "error":
+				if (pendingProjectPath) {
+					showProjectPathError(msg.message ?? "Could not open that folder.");
+					reopenProjectMenu();
+					pendingProjectPath = null;
+				}
 				addSystemMessage("error", "Error", msg.message ?? "Unknown error");
 				setBusy(false);
 				setStatus("ready");

@@ -294,6 +294,14 @@ input {
 	gap: 0.75rem;
 }
 
+#project-dropdown {
+	position: relative;
+}
+
+#project-dropdown.is-open {
+	z-index: 200;
+}
+
 .context-chip {
 	display: inline-flex;
 	align-items: center;
@@ -414,6 +422,12 @@ input {
 
 .project-menu-open:hover {
 	background: rgba(255, 255, 255, 0.1);
+}
+
+.project-menu-error {
+	margin: 0 0.35rem;
+	font-size: 0.72rem;
+	color: #f87171;
 }
 
 .dropdown {

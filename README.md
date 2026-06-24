@@ -42,9 +42,10 @@ Then open [http://localhost:3847](http://localhost:3847).
 | --- | --- | --- |
 | `PORT` | `3847` | HTTP + WebSocket port |
 | `PI_CWD` | current directory | Working directory passed to `session/new` |
-| `PI_ACP_COMMAND` | `npx` | Command used to launch pi-acp |
-| `PI_ACP_ARGS` | `-y pi-acp` | Args for pi-acp (space-separated string) |
-| `PI_ACP_SHELL` | `1` on Windows, `0` elsewhere | Use a shell when spawning pi-acp (required on Windows for `npx`) |
+| `PI_ACP_COMMAND` | `node` | Command used to launch pi-acp |
+| `PI_ACP_ARGS` | bundled `pi-acp` entry | Args for pi-acp (space-separated string) |
+| `PI_ACP_SHELL` | `1` when command is `npx` on Windows | Use a shell when spawning pi-acp |
+| `PI_ACP_ENABLE_EXTENSION_COMMANDS` | `1` | Include Pi extension slash commands such as `/tldr` |
 
 Examples:
 
@@ -54,6 +55,9 @@ PI_CWD=/path/to/my/project npm start
 
 # Use a globally installed pi-acp
 PI_ACP_COMMAND=pi-acp PI_ACP_ARGS= npm start
+
+# Disable extension slash commands if an extension UI command misbehaves in the browser
+PI_ACP_ENABLE_EXTENSION_COMMANDS=0 npm start
 ```
 
 ## WebSocket protocol
