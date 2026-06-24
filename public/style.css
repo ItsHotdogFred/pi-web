@@ -807,11 +807,19 @@ input {
 }
 
 .model-menu.dropdown-menu {
-	top: calc(100% + 6px);
-	bottom: auto;
 	min-width: 280px;
 	padding: 0;
 	overflow: hidden;
+}
+
+.home-composer .model-menu.dropdown-menu {
+	top: calc(100% + 6px);
+	bottom: auto;
+}
+
+.chat-composer-box .model-menu.dropdown-menu {
+	top: auto;
+	bottom: calc(100% + 6px);
 }
 
 .model-menu-search-wrap {
