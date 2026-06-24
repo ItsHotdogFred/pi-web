@@ -1,9 +1,11 @@
 import { spawn, execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { join, extname, basename, resolve } from "node:path";
-import { access, readFile, stat, writeFile } from "node:fs/promises";
+import { join, extname, basename, resolve, isAbsolute } from "node:path";
+import { homedir } from "node:os";
+import { readFileSync, existsSync } from "node:fs";
+import { access, readFile, stat, writeFile, readdir, open } from "node:fs/promises";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Readable, Writable } from "node:stream";
 import { WebSocketServer } from "ws";
 import * as acp from "@agentclientprotocol/sdk";
@@ -208,7 +210,768 @@ function createAcpClient(piSession) {
 }
 
 const MAX_WIRE_CHARS = 2000;
-const PRELOAD_SESSION_COUNT = 2;
+
+function getPiAgentDir() {
+	return process.env.PI_CODING_AGENT_DIR
+		? resolve(process.env.PI_CODING_AGENT_DIR)
+		: join(homedir(), ".pi", "agent");
+}
+
+const DEFAULT_CONTEXT_WINDOW = 128_000;
+const CONTEXT_DIAL_RADIUS = 7;
+const CONTEXT_DIAL_CIRCUMFERENCE = 2 * Math.PI * CONTEXT_DIAL_RADIUS;
+
+let modelContextWindows = null;
+
+function loadModelContextWindows() {
+	if (modelContextWindows) return modelContextWindows;
+
+	const windows = new Map();
+	const agentDir = getPiAgentDir();
+	const files = [
+		join(agentDir, "models.json"),
+		join(agentDir, "cursor-model-cache.json"),
+	];
+
+	for (const filePath of files) {
+		try {
+			const data = JSON.parse(readFileSync(filePath, "utf8"));
+			if (Array.isArray(data)) {
+				for (const model of data) {
+					if (typeof model?.id === "string" && typeof model?.contextWindow === "number") {
+						windows.set(model.id, model.contextWindow);
+					}
+				}
+				continue;
+			}
+			for (const provider of Object.values(data?.providers ?? {})) {
+				for (const model of provider?.models ?? []) {
+					if (typeof model?.id === "string" && typeof model?.contextWindow === "number") {
+						windows.set(model.id, model.contextWindow);
+					}
+				}
+			}
+		} catch {
+			/* ignore missing or invalid model files */
+		}
+	}
+
+	modelContextWindows = windows;
+	return windows;
+}
+
+function resolveContextWindow(modelId) {
+	if (!modelId) return DEFAULT_CONTEXT_WINDOW;
+	return loadModelContextWindows().get(modelId) ?? DEFAULT_CONTEXT_WINDOW;
+}
+
+function calculateContextTokens(usage) {
+	if (!usage || typeof usage !== "object") return 0;
+	if (typeof usage.totalTokens === "number" && usage.totalTokens > 0) return usage.totalTokens;
+	return (
+		(usage.input ?? 0) +
+		(usage.output ?? 0) +
+		(usage.cacheRead ?? 0) +
+		(usage.cacheWrite ?? 0)
+	);
+}
+
+function estimateMessageTokensFallback(message) {
+	if (!message) return 0;
+	const parts = [];
+	if (typeof message.content === "string") {
+		parts.push(message.content);
+	} else if (Array.isArray(message.content)) {
+		for (const part of message.content) {
+			if (part?.type === "text" && typeof part.text === "string") parts.push(part.text);
+			else if (part?.type === "thinking" && typeof part.thinking === "string") parts.push(part.thinking);
+			else if (part?.type === "toolCall") parts.push(JSON.stringify(part));
+			else if (part?.type === "image") parts.push("".padEnd(4800, "x"));
+			else parts.push(JSON.stringify(part));
+		}
+	} else if (message.content != null) {
+		parts.push(JSON.stringify(message.content));
+	}
+	if (parts.length === 0) return 0;
+	return Math.max(1, Math.ceil(parts.join("\n").length / 4));
+}
+
+function estimateTextTokens(text) {
+	if (!text || typeof text !== "string") return 0;
+	return Math.ceil(text.length / 4);
+}
+
+function findPiCodingAgentDir() {
+	if (process.env.PI_CODING_AGENT_DIR) {
+		const resolved = resolve(process.env.PI_CODING_AGENT_DIR);
+		if (existsSync(join(resolved, "package.json"))) return resolved;
+	}
+
+	const candidates = [
+		join(__dirname, "node_modules", "@earendil-works", "pi-coding-agent"),
+		join(homedir(), "AppData", "Roaming", "npm", "node_modules", "@earendil-works", "pi-coding-agent"),
+		join(homedir(), ".local", "share", "npm", "node_modules", "@earendil-works", "pi-coding-agent"),
+	];
+
+	for (const dir of candidates) {
+		if (existsSync(join(dir, "package.json"))) return dir;
+	}
+
+	return null;
+}
+
+let piPromptModulePromise = null;
+let piEstimateTokensFn = null;
+
+function loadPiPromptModule() {
+	if (!piPromptModulePromise) {
+		piPromptModulePromise = (async () => {
+			const piDir = findPiCodingAgentDir();
+			if (!piDir) return null;
+
+			const [systemPrompt, resourceLoader, skills, tools, compaction] = await Promise.all([
+				import(pathToFileURL(join(piDir, "dist/core/system-prompt.js")).href),
+				import(pathToFileURL(join(piDir, "dist/core/resource-loader.js")).href),
+				import(pathToFileURL(join(piDir, "dist/core/skills.js")).href),
+				import(pathToFileURL(join(piDir, "dist/core/tools/index.js")).href),
+				import(pathToFileURL(join(piDir, "dist/core/compaction/compaction.js")).href),
+			]);
+
+			piEstimateTokensFn = compaction.estimateTokens;
+
+			return {
+				buildSystemPrompt: systemPrompt.buildSystemPrompt,
+				loadProjectContextFiles: resourceLoader.loadProjectContextFiles,
+				loadSkills: skills.loadSkills,
+				createAllToolDefinitions: tools.createAllToolDefinitions,
+				estimateTokens: compaction.estimateTokens,
+			};
+		})().catch(() => null);
+	}
+
+	return piPromptModulePromise;
+}
+
+function estimateMessageTokens(message) {
+	if (piEstimateTokensFn) return piEstimateTokensFn(message);
+	return estimateMessageTokensFallback(message);
+}
+
+function readFirstExistingFile(paths) {
+	for (const filePath of paths) {
+		try {
+			if (existsSync(filePath)) return readFileSync(filePath, "utf8");
+		} catch {
+			/* ignore */
+		}
+	}
+	return null;
+}
+
+function estimateToolSchemaTokens(toolDef) {
+	if (!toolDef) return 0;
+	const parts = [toolDef.name, toolDef.description, toolDef.promptSnippet, JSON.stringify(toolDef.parameters ?? {})];
+	return estimateTextTokens(parts.filter(Boolean).join("\n"));
+}
+
+function findDefaultSystemPromptSource() {
+	const piDir = findPiCodingAgentDir();
+	if (!piDir) return null;
+	const filePath = join(piDir, "dist/core/system-prompt.js");
+	return existsSync(filePath) ? filePath : null;
+}
+
+function formatPromptSourceHint(filePath) {
+	if (!filePath) return undefined;
+	const normalized = filePath.replace(/\\/g, "/");
+	const marker = "@earendil-works/pi-coding-agent/";
+	const idx = normalized.indexOf(marker);
+	if (idx >= 0) return normalized.slice(idx + marker.length);
+	return basename(filePath);
+}
+
+function discoverPromptFile(cwd, agentDir, filename) {
+	const projectPath = join(cwd, ".pi", filename);
+	if (existsSync(projectPath)) return projectPath;
+	const globalPath = join(agentDir, filename);
+	if (existsSync(globalPath)) return globalPath;
+	return null;
+}
+
+function readPromptFile(filePath) {
+	if (!filePath) return undefined;
+	try {
+		const raw = readFileSync(filePath, "utf8");
+		return raw.trim() ? raw : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function loadPiPromptInputs(cwd) {
+	const resolvedCwd = resolve(cwd || DEFAULT_CWD);
+	const agentDir = getPiAgentDir();
+	const pi = await loadPiPromptModule();
+
+	const systemPromptPath = discoverPromptFile(resolvedCwd, agentDir, "SYSTEM.md");
+	const appendPromptPath = discoverPromptFile(resolvedCwd, agentDir, "APPEND_SYSTEM.md");
+	const customPrompt = readPromptFile(systemPromptPath);
+	const appendSystemPrompt = readPromptFile(appendPromptPath);
+
+	let contextFiles = [];
+	let skills = [];
+	const activeTools = ["read", "bash", "edit", "write"];
+	const toolSnippets = {};
+	const promptGuidelines = [];
+
+	if (pi) {
+		contextFiles = pi.loadProjectContextFiles({ cwd: resolvedCwd, agentDir });
+		const skillsResult = pi.loadSkills({
+			cwd: resolvedCwd,
+			agentDir,
+			skillPaths: [],
+			includeDefaults: true,
+		});
+		skills = skillsResult.skills ?? [];
+
+		const toolDefs = pi.createAllToolDefinitions(resolvedCwd, {});
+		for (const name of activeTools) {
+			const def = toolDefs[name];
+			if (def?.promptSnippet) toolSnippets[name] = def.promptSnippet;
+			if (Array.isArray(def?.promptGuidelines)) promptGuidelines.push(...def.promptGuidelines);
+		}
+	} else {
+		toolSnippets.read = "Read file contents";
+		toolSnippets.bash = "Execute bash commands (ls, grep, find, etc.)";
+		toolSnippets.edit =
+			"Make precise file edits with exact text replacement, including multiple disjoint edits in one call";
+		toolSnippets.write = "Create or overwrite files";
+	}
+
+	return {
+		pi,
+		resolvedCwd,
+		customPrompt,
+		appendSystemPrompt,
+		systemPromptPath,
+		appendPromptPath,
+		contextFiles,
+		skills,
+		activeTools,
+		toolSnippets,
+		promptGuidelines,
+	};
+}
+
+async function buildPiPromptBreakdown(cwd) {
+	const inputs = await loadPiPromptInputs(cwd);
+	const {
+		pi,
+		resolvedCwd,
+		customPrompt,
+		appendSystemPrompt,
+		systemPromptPath,
+		appendPromptPath,
+		contextFiles,
+		skills,
+		activeTools,
+		toolSnippets,
+		promptGuidelines,
+	} = inputs;
+
+	if (!pi) {
+		return {
+			system: 0,
+			tools: 0,
+			skills: 0,
+			extensions: estimateTextTokens(appendSystemPrompt),
+			context: 0,
+			systemLabel: customPrompt ? basename(systemPromptPath ?? "SYSTEM.md") : "Default system prompt",
+			appendLabel: appendPromptPath ? basename(appendPromptPath) : "APPEND_SYSTEM.md",
+			systemSource: customPrompt
+				? formatPromptSourceHint(systemPromptPath)
+				: formatPromptSourceHint(findDefaultSystemPromptSource()),
+			appendSource: formatPromptSourceHint(appendPromptPath),
+			hasCustomSystemPrompt: Boolean(customPrompt),
+			hasAppendSystemPrompt: Boolean(appendSystemPrompt),
+			mcp: 0,
+		};
+	}
+
+	const shared = {
+		cwd: resolvedCwd,
+		customPrompt,
+		selectedTools: activeTools,
+		toolSnippets,
+		promptGuidelines,
+	};
+
+	const bare = pi.buildSystemPrompt({ ...shared, contextFiles: [], skills: [] });
+	const withAppend = pi.buildSystemPrompt({
+		...shared,
+		appendSystemPrompt,
+		contextFiles: [],
+		skills: [],
+	});
+	const withContext = pi.buildSystemPrompt({
+		...shared,
+		appendSystemPrompt,
+		contextFiles,
+		skills: [],
+	});
+	const withSkills = pi.buildSystemPrompt({
+		...shared,
+		appendSystemPrompt,
+		contextFiles,
+		skills,
+	});
+
+	let system = 0;
+	let tools = 0;
+
+	if (customPrompt) {
+		system = estimateTextTokens(bare);
+		const toolDefs = pi.createAllToolDefinitions(resolvedCwd, {});
+		for (const name of activeTools) {
+			tools += estimateToolSchemaTokens(toolDefs[name]);
+		}
+	} else {
+		// Count the full Pi base prompt (intro, tool list, guidelines, pi docs, date/cwd).
+		// Do not use splitDefaultPromptSections here — it drops the tools/guidelines block
+		// from "system" and made the UI show ~361 tokens instead of ~600+.
+		system = estimateTextTokens(bare);
+		tools = 0;
+	}
+
+	return {
+		system,
+		tools,
+		skills: Math.max(0, estimateTextTokens(withSkills) - estimateTextTokens(withContext)),
+		extensions: Math.max(0, estimateTextTokens(withAppend) - estimateTextTokens(bare)),
+		context: Math.max(0, estimateTextTokens(withContext) - estimateTextTokens(withAppend)),
+		systemLabel: customPrompt
+			? basename(systemPromptPath ?? "SYSTEM.md")
+			: "Default system prompt",
+		appendLabel: appendPromptPath ? basename(appendPromptPath) : "APPEND_SYSTEM.md",
+		systemSource: customPrompt
+			? formatPromptSourceHint(systemPromptPath)
+			: formatPromptSourceHint(findDefaultSystemPromptSource()),
+		appendSource: formatPromptSourceHint(appendPromptPath),
+		hasCustomSystemPrompt: Boolean(customPrompt),
+		hasAppendSystemPrompt: Boolean(appendSystemPrompt),
+		mcp: 0,
+	};
+}
+
+async function buildContextBreakdown(messages, cwd, totalUsed) {
+	// Warm Pi modules so estimateMessageTokens uses the same heuristic as Pi CLI.
+	await loadPiPromptModule();
+
+	const promptParts = await buildPiPromptBreakdown(cwd);
+
+	const staticParts = [
+		{
+			id: "system",
+			label: promptParts.systemLabel,
+			tokens: promptParts.system,
+			source: promptParts.systemSource,
+		},
+		...(promptParts.tools > 0 ? [{ id: "tools", label: "Tools", tokens: promptParts.tools }] : []),
+		{ id: "skills", label: "Skills", tokens: promptParts.skills },
+		...(promptParts.extensions > 0 && promptParts.appendLabel
+			? [{
+				id: "extensions",
+				label: promptParts.appendLabel,
+				tokens: promptParts.extensions,
+				source: promptParts.appendSource,
+			}]
+			: []),
+		{ id: "context", label: "Project context", tokens: promptParts.context },
+	].filter((part) => part.tokens > 0);
+
+	const conversationTokens = messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
+
+	const parts = [...staticParts];
+	if (conversationTokens > 0) {
+		parts.push({ id: "conversation", label: "Conversation", tokens: conversationTokens });
+	}
+
+	if (totalUsed != null && totalUsed > 0) {
+		const accounted = parts.reduce((sum, part) => sum + part.tokens, 0);
+		const other = totalUsed - accounted;
+		if (other > 0) {
+			parts.push({ id: "other", label: "Tool schemas & vision", tokens: other });
+		} else if (other < 0) {
+			const conversation = parts.find((part) => part.id === "conversation");
+			if (conversation) conversation.tokens = Math.max(0, conversation.tokens + other);
+		}
+	}
+
+	return parts;
+}
+
+async function parseSessionContextUsage(content, cwd = DEFAULT_CWD) {
+	const branchEntries = [];
+	let modelId = null;
+
+	for (const line of content.split("\n")) {
+		if (!line.trim()) continue;
+		let row;
+		try {
+			row = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (row?.type === "model_change" && typeof row.modelId === "string") {
+			modelId = row.modelId;
+		}
+		if (row?.type === "message" || row?.type === "compaction") {
+			branchEntries.push(row);
+		}
+	}
+
+	const contextWindow = resolveContextWindow(modelId);
+	const messages = branchEntries
+		.filter((entry) => entry.type === "message" && entry.message)
+		.map((entry) => entry.message);
+
+	let latestCompactionIndex = -1;
+	for (let i = branchEntries.length - 1; i >= 0; i--) {
+		if (branchEntries[i].type === "compaction") {
+			latestCompactionIndex = i;
+			break;
+		}
+	}
+
+	if (latestCompactionIndex >= 0) {
+		let hasPostCompactionUsage = false;
+		for (let i = branchEntries.length - 1; i > latestCompactionIndex; i--) {
+			const entry = branchEntries[i];
+			if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
+			const assistant = entry.message;
+			if (assistant.stopReason === "aborted" || assistant.stopReason === "error") continue;
+			if (calculateContextTokens(assistant.usage) > 0) {
+				hasPostCompactionUsage = true;
+			}
+			break;
+		}
+		if (!hasPostCompactionUsage) {
+			return {
+				used: null,
+				size: contextWindow,
+				percent: null,
+				breakdown: await buildContextBreakdown(messages, cwd, null),
+			};
+		}
+	}
+
+	let usageInfo = null;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message.role !== "assistant") continue;
+		if (message.stopReason === "aborted" || message.stopReason === "error") continue;
+		if (!message.usage) continue;
+		usageInfo = { usage: message.usage, index: i };
+		break;
+	}
+
+	let used;
+	if (!usageInfo) {
+		used = messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
+	} else {
+		used = calculateContextTokens(usageInfo.usage);
+		for (let i = usageInfo.index + 1; i < messages.length; i++) {
+			used += estimateMessageTokens(messages[i]);
+		}
+	}
+
+	const percent = contextWindow > 0 ? (used / contextWindow) * 100 : null;
+	return {
+		used,
+		size: contextWindow,
+		percent,
+		breakdown: await buildContextBreakdown(messages, cwd, used),
+	};
+}
+
+function sendContextUsage(ws, usage) {
+	if (!usage) return;
+	sendJson(ws, {
+		type: "context",
+		used: usage.used,
+		size: usage.size,
+		percent: usage.percent,
+		breakdown: Array.isArray(usage.breakdown) ? usage.breakdown : [],
+	});
+}
+
+async function readSessionContextUsage(sessionFileIndex, sessionId, cwd) {
+	const filePath = sessionFileIndex?.get(sessionId);
+	if (!filePath) return null;
+	try {
+		const content = await readFile(filePath, "utf8");
+		return await parseSessionContextUsage(content, cwd);
+	} catch {
+		return null;
+	}
+}
+
+async function getPiSessionsDir() {
+	const agentDir = getPiAgentDir();
+	const settingsPath = join(agentDir, "settings.json");
+	try {
+		const data = JSON.parse(await readFile(settingsPath, "utf8"));
+		const sessionDir = data?.sessionDir;
+		if (typeof sessionDir === "string" && sessionDir.trim()) {
+			return isAbsolute(sessionDir) ? sessionDir : resolve(agentDir, sessionDir);
+		}
+	} catch {
+		// ignore missing settings
+	}
+	return join(agentDir, "sessions");
+}
+
+async function walkJsonlFiles(dir, out) {
+	let entries;
+	try {
+		entries = await readdir(dir, { withFileTypes: true });
+	} catch {
+		return;
+	}
+	for (const entry of entries) {
+		const filePath = join(dir, entry.name);
+		if (entry.isDirectory()) await walkJsonlFiles(filePath, out);
+		else if (entry.isFile() && entry.name.endsWith(".jsonl")) out.push(filePath);
+	}
+}
+
+function parseSessionHeader(firstLine) {
+	try {
+		const obj = JSON.parse(firstLine);
+		if (obj?.type !== "session") return null;
+		const sessionId = typeof obj?.id === "string" ? obj.id : null;
+		const cwd = typeof obj?.cwd === "string" ? obj.cwd : null;
+		if (!sessionId || !cwd) return null;
+		return { sessionId, cwd };
+	} catch {
+		return null;
+	}
+}
+
+async function buildSessionFileIndex(cwd) {
+	const index = new Map();
+	const files = [];
+	await walkJsonlFiles(await getPiSessionsDir(), files);
+	await Promise.all(
+		files.map(async (file) => {
+			try {
+				const handle = await open(file, "r");
+				const buf = Buffer.alloc(4096);
+				const { bytesRead } = await handle.read(buf, 0, 4096, 0);
+				await handle.close();
+				const firstLine = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0]?.trim();
+				const header = parseSessionHeader(firstLine);
+				if (header?.cwd === cwd) index.set(header.sessionId, file);
+			} catch {
+				// ignore unreadable files
+			}
+		}),
+	);
+	return index;
+}
+
+function normalizePiMessageText(content) {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.map((part) => (part?.type === "text" && typeof part.text === "string" ? part.text : ""))
+		.filter(Boolean)
+		.join("");
+}
+
+function userContentToWireEvents(content, messageId) {
+	const events = [];
+	const parts = Array.isArray(content)
+		? content
+		: typeof content === "string"
+			? [{ type: "text", text: content }]
+			: [];
+
+	for (const part of parts) {
+		if (part?.type === "text" && part.text) {
+			events.push({ type: "user_chunk", text: part.text, messageId });
+		} else if (part?.type === "image" && part.data) {
+			events.push({
+				type: "user_chunk",
+				messageId,
+				image: {
+					mimeType: part.mimeType || "image/png",
+					data: part.data,
+				},
+			});
+		}
+	}
+	return events;
+}
+
+function toolResultToText(result) {
+	if (!result) return "";
+	const details = result.details;
+	const diff = details?.diff;
+	if (typeof diff === "string" && diff.trim()) return diff;
+	if (Array.isArray(result.content)) {
+		const texts = result.content
+			.map((part) => (part?.type === "text" && typeof part.text === "string" ? part.text : ""))
+			.filter(Boolean);
+		if (texts.length) return texts.join("");
+	}
+	const stdout =
+		details?.stdout ?? result.stdout ?? details?.output ?? result.output;
+	const stderr = details?.stderr ?? result.stderr;
+	if ((typeof stdout === "string" && stdout.trim()) || (typeof stderr === "string" && stderr.trim())) {
+		const parts = [];
+		if (typeof stdout === "string" && stdout.trim()) parts.push(stdout);
+		if (typeof stderr === "string" && stderr.trim()) parts.push(`stderr:\n${stderr}`);
+		return parts.join("\n\n").trimEnd();
+	}
+	try {
+		return JSON.stringify(result, null, 2);
+	} catch {
+		return String(result);
+	}
+}
+
+function parseSessionJsonl(content) {
+	const events = [];
+	for (const line of content.split("\n")) {
+		if (!line.trim()) continue;
+		let row;
+		try {
+			row = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (row?.type !== "message") continue;
+		const message = row.message;
+		if (!message) continue;
+
+		const role = String(message.role ?? "");
+		if (role === "user") {
+			events.push(...userContentToWireEvents(message.content, row.id));
+			continue;
+		}
+		if (role === "assistant") {
+			const content = message.content;
+			if (Array.isArray(content)) {
+				for (const part of content) {
+					if (part?.type === "toolCall") {
+						const toolCallId = String(part.id ?? part.toolCallId ?? crypto.randomUUID());
+						const toolName = prettifyToolName(String(part.name ?? part.toolName ?? "tool")) ?? "tool";
+						events.push({
+							type: "tool",
+							event: "start",
+							id: toolCallId,
+							title: toolName,
+							toolName,
+							status: "completed",
+							kind: toolName,
+							rawInput: part.arguments ?? part.input ?? null,
+						});
+					} else if (part?.type === "text" && part.text) {
+						events.push({ type: "chunk", text: part.text });
+					} else if (part?.type === "thinking" && part.thinking) {
+						events.push({ type: "thought", text: part.thinking });
+					}
+				}
+			} else {
+				const text = normalizePiMessageText(content);
+				if (text) events.push({ type: "chunk", text });
+			}
+			continue;
+		}
+		if (role === "toolResult") {
+			const toolCallId = String(message.toolCallId ?? crypto.randomUUID());
+			const toolName = prettifyToolName(String(message.toolName ?? "tool")) ?? "tool";
+			events.push({
+				type: "tool",
+				event: "start",
+				id: toolCallId,
+				title: toolName,
+				toolName,
+				status: "completed",
+				kind: toolName,
+			});
+			const outputText = toolResultToText(message);
+			events.push({
+				type: "tool",
+				event: "update",
+				id: toolCallId,
+				status: message.isError ? "failed" : "completed",
+				rawOutput: outputText ? truncateWire(outputText) : truncateWire(message),
+			});
+		}
+	}
+	return events;
+}
+
+function updateToWireEvents(update, toolTracker) {
+	switch (update.sessionUpdate) {
+		case "user_message_chunk": {
+			return userContentToWireEvents(
+				update.content?.type ? [update.content] : [],
+				update.messageId,
+			);
+		}
+		case "agent_message_chunk": {
+			if (update.content?.type === "text" && update.content.text) {
+				if (isStartupInfo(update.content.text)) return [];
+				return [{ type: "chunk", text: update.content.text }];
+			}
+			return [];
+		}
+		case "agent_thought_chunk": {
+			if (update.content?.type === "text" && update.content.text) {
+				return [{ type: "thought", text: update.content.text }];
+			}
+			return [];
+		}
+		case "tool_call":
+		case "tool_call_update": {
+			const merged = toolTracker?.merge(update) ?? {
+				id: update.toolCallId,
+				name: resolveToolName(update),
+			};
+			const payload = {
+				type: "tool",
+				event: update.sessionUpdate === "tool_call" ? "start" : "update",
+				id: merged.id ?? update.toolCallId,
+				status: update.status,
+				kind: update.kind,
+			};
+			if (merged.name) {
+				payload.title = merged.name;
+				payload.toolName = merged.name;
+			}
+			if (update.rawInput != null) payload.rawInput = truncateWire(update.rawInput);
+			if (update.rawOutput != null) payload.rawOutput = truncateWire(update.rawOutput);
+			return [payload];
+		}
+		case "plan":
+			return [
+				{
+					type: "plan",
+					entries: update.entries ?? [],
+				},
+			];
+		default:
+			return [];
+	}
+}
+
+function sendHistoryBatch(ws, events) {
+	if (!events?.length) return;
+	sendJson(ws, { type: "history", events });
+}
 
 function truncateWire(value, max = MAX_WIRE_CHARS) {
 	if (value == null) return value;
@@ -271,15 +1034,6 @@ function forwardUserMessageChunk(update, ws) {
 			image: { mimeType: content.mimeType, data: content.data },
 		});
 	}
-}
-
-function pickMostRecentSession(sessions) {
-	if (!sessions?.length) return null;
-	return sessions.reduce((latest, session) => {
-		const latestTime = latest.updatedAt ? Date.parse(latest.updatedAt) : 0;
-		const sessionTime = session.updatedAt ? Date.parse(session.updatedAt) : 0;
-		return sessionTime > latestTime ? session : latest;
-	});
 }
 
 function forwardDefaultsUpdate(update, ws) {
@@ -349,6 +1103,13 @@ function forwardSessionUpdate(update, ws, { slimTools = false, toolTracker = nul
 			break;
 		case "config_option_update":
 			sendModelsFromConfigOptions(ws, update.configOptions);
+			break;
+		case "usage_update":
+			sendContextUsage(ws, {
+				used: update.used,
+				size: update.size,
+				percent: update.size > 0 ? (update.used / update.size) * 100 : null,
+			});
 			break;
 		default:
 			break;
@@ -482,6 +1243,34 @@ class PiSession {
 		this.historyCache = new Map();
 		this.historyCachePromises = new Map();
 		this.preloadChain = Promise.resolve();
+		this.sessionLoadMutex = Promise.resolve();
+		this.sessionFileIndex = new Map();
+		this.contextRefreshTimer = null;
+	}
+
+	async refreshContextUsage() {
+		const sessionId = this.session?.sessionId;
+		if (!sessionId || this.closed) return;
+
+		const usage = await readSessionContextUsage(this.sessionFileIndex, sessionId, this.cwd);
+		if (usage) sendContextUsage(this.ws, usage);
+	}
+
+	scheduleContextRefresh(delayMs = 120) {
+		clearTimeout(this.contextRefreshTimer);
+		this.contextRefreshTimer = setTimeout(() => {
+			this.contextRefreshTimer = null;
+			void this.refreshContextUsage();
+		}, delayMs);
+	}
+
+	async withSessionLoad(fn) {
+		const run = this.sessionLoadMutex.then(fn, fn);
+		this.sessionLoadMutex = run.then(
+			() => {},
+			() => {},
+		);
+		return run;
 	}
 
 	historyCacheKey(sessionId) {
@@ -490,20 +1279,17 @@ class PiSession {
 
 	clearSessionCaches() {
 		if (this.cachedNewSession) {
-			const orphanId = this.cachedNewSession.sessionId;
 			this.cachedNewSession.dispose();
 			this.cachedNewSession = null;
-			if (this.ctx) {
-				void this.ctx
-					.request(acp.methods.agent.session.delete, { sessionId: orphanId })
-					.catch(() => {});
-			}
 		}
 
+		clearTimeout(this.contextRefreshTimer);
+		this.contextRefreshTimer = null;
 		this.cachedNewSessionPromise = null;
 		this.historyCache.clear();
 		this.historyCachePromises.clear();
 		this.preloadChain = Promise.resolve();
+		this.sessionFileIndex = new Map();
 	}
 
 	invalidateHistoryCache(sessionId) {
@@ -511,17 +1297,51 @@ class PiSession {
 		this.historyCache.delete(this.historyCacheKey(sessionId));
 	}
 
-	schedulePreload(sessionId) {
+	scheduleDiskPreload(sessionId) {
 		const key = this.historyCacheKey(sessionId);
 		if (this.historyCache.has(key) || this.historyCachePromises.has(key)) return;
 
-		this.preloadChain = this.preloadChain
-			.then(() => this.preloadSessionHistory(sessionId))
+		const filePath = this.sessionFileIndex?.get(sessionId);
+		if (!filePath) return;
+
+		const promise = readFile(filePath, "utf8")
+			.then((content) => {
+				if (this.closed) return;
+				const wireEvents = parseSessionJsonl(content);
+				this.historyCache.set(key, { wireEvents });
+			})
 			.catch(() => {});
+
+		this.historyCachePromises.set(key, promise);
+		void promise.finally(() => this.historyCachePromises.delete(key));
+	}
+
+	async getHistoryCache(sessionId) {
+		const key = this.historyCacheKey(sessionId);
+		const pending = this.historyCachePromises.get(key);
+		if (pending) await pending.catch(() => {});
+
+		let cached = this.historyCache.get(key);
+		if (cached?.wireEvents) return cached;
+
+		const filePath = this.sessionFileIndex?.get(sessionId);
+		if (!filePath) return null;
+
+		try {
+			const content = await readFile(filePath, "utf8");
+			const wireEvents = parseSessionJsonl(content);
+			cached = { wireEvents };
+			this.historyCache.set(key, cached);
+			return cached;
+		} catch {
+			return null;
+		}
 	}
 
 	async ensureCachedNewSession() {
-		if (this.closed || !this.ctx || this.cachedNewSession || this.cachedNewSessionPromise) return;
+		if (this.closed || !this.ctx || this.session || this.cachedNewSession || this.cachedNewSessionPromise) {
+			return;
+		}
 
 		this.cachedNewSessionPromise = (async () => {
 			try {
@@ -542,64 +1362,13 @@ class PiSession {
 		await this.cachedNewSessionPromise;
 	}
 
-	async preloadSessionHistory(sessionId) {
-		if (!sessionId || this.closed || !this.ctx) return;
-
-		const key = this.historyCacheKey(sessionId);
-		if (this.historyCache.has(key) || this.historyCachePromises.has(key)) return;
-
-		const promise = (async () => {
-			const updates = [];
-			let configOptions = null;
-			const probe = this.ctx.attachSession({ sessionId });
-
-			this.replayHandler = (params) => {
-				updates.push(params);
-			};
-
-			try {
-				const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
-					sessionId,
-					cwd: this.cwd,
-					mcpServers: [],
-				});
-				configOptions = loadResponse.configOptions;
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				console.error(`[pi-web] failed to preload session ${sessionId}:`, message);
-				return;
-			} finally {
-				this.replayHandler = null;
-				probe.dispose();
-			}
-
-			if (!this.closed) {
-				this.historyCache.set(key, { updates, configOptions });
-			}
-		})();
-
-		this.historyCachePromises.set(key, promise);
-		try {
-			await promise;
-		} finally {
-			this.historyCachePromises.delete(key);
-		}
-	}
-
 	warmSessionCaches(sessions) {
-		void this.ensureCachedNewSession();
+		if (!this.session) void this.ensureCachedNewSession();
 
-		const sorted = [...sessions].sort((a, b) => {
-			const aTime = a.updatedAt ? Date.parse(a.updatedAt) : 0;
-			const bTime = b.updatedAt ? Date.parse(b.updatedAt) : 0;
-			return bTime - aTime;
-		});
-
-		for (const session of sorted.slice(0, PRELOAD_SESSION_COUNT)) {
-			this.schedulePreload(session.sessionId);
+		for (const session of sessions) {
+			this.scheduleDiskPreload(session.sessionId);
 		}
 	}
-
 	async drainProbeDefaults(probe, timeoutMs = 3000) {
 		const deadline = Date.now() + timeoutMs;
 		let lastCommandUpdateAt = 0;
@@ -628,54 +1397,23 @@ class PiSession {
 		}
 	}
 
-	async fetchAgentDefaults(sessions) {
+	async fetchAgentDefaults(_sessions) {
 		const replayDefaults = (params) => {
 			forwardDefaultsUpdate(params.update, this.ws);
 		};
 
+		let probe = null;
 		try {
 			this.replayHandler = replayDefaults;
-
-			if (sessions.length > 0) {
-				const sessionId = pickMostRecentSession(sessions).sessionId;
-				const probe = this.ctx.attachSession({ sessionId });
-				try {
-					const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
-						sessionId,
-						cwd: this.cwd,
-						mcpServers: [],
-					});
-					sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
-					await this.drainProbeDefaults(probe);
-				} finally {
-					probe.dispose();
-				}
-				return;
-			}
-
-			let probe = null;
-			try {
-				probe = await this.ctx.buildSession(this.cwd).start();
-				sendModelsFromConfigOptions(this.ws, probe.newSessionResponse.configOptions);
-				await this.drainProbeDefaults(probe);
-			} finally {
-				if (probe) {
-					probe.dispose();
-					try {
-						await this.ctx.request(acp.methods.agent.session.delete, {
-							sessionId: probe.sessionId,
-						});
-						await this.refreshSessions();
-					} catch {
-						// ignore if delete is unsupported
-					}
-				}
-			}
+			probe = await this.ctx.buildSession(this.cwd).start();
+			sendModelsFromConfigOptions(this.ws, probe.newSessionResponse.configOptions);
+			await this.drainProbeDefaults(probe);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			console.error("[pi-web] failed to fetch agent defaults:", message);
 		} finally {
 			this.replayHandler = null;
+			probe?.dispose();
 		}
 	}
 
@@ -750,8 +1488,9 @@ class PiSession {
 		const sessions = listResponse.sessions ?? [];
 		sendJson(this.ws, { type: "sessions", sessions });
 
-		await this.fetchAgentDefaults(sessions);
+		this.sessionFileIndex = await buildSessionFileIndex(this.cwd);
 		this.sendReady();
+		void this.fetchAgentDefaults(sessions);
 		void this.warmSessionCaches(sessions);
 	}
 
@@ -826,60 +1565,56 @@ class PiSession {
 	}
 
 	async loadSession(sessionId, { replay = true } = {}) {
-		const key = this.historyCacheKey(sessionId);
-		const pendingPreload = this.historyCachePromises.get(key);
-		if (pendingPreload) {
-			await pendingPreload.catch(() => {});
-		}
-
 		await this.disposeActiveSession();
 
 		sendJson(this.ws, { type: "clear" });
 		this.toolTracker.reset();
 
-		const cached = replay ? this.historyCache.get(key) : null;
+		const cached = replay ? await this.getHistoryCache(sessionId) : null;
+		const collected = [];
 
-		if (cached) {
+		if (cached?.wireEvents?.length) {
 			sendJson(this.ws, { type: "status", state: "loading_history" });
-			for (const params of cached.updates) {
-				forwardSessionUpdate(params.update, this.ws, { toolTracker: this.toolTracker });
-			}
-			if (cached.configOptions) {
-				sendModelsFromConfigOptions(this.ws, cached.configOptions);
-			}
+			sendHistoryBatch(this.ws, cached.wireEvents);
 		} else if (replay) {
 			sendJson(this.ws, { type: "status", state: "loading_history" });
 			this.replayHandler = (params) => {
-				forwardSessionUpdate(params.update, this.ws, { toolTracker: this.toolTracker });
+				for (const event of updateToWireEvents(params.update, this.toolTracker)) {
+					collected.push(event);
+				}
 			};
 		}
 
+		let loadResponse = null;
 		try {
-			if (!cached) {
-				const loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
+			await this.withSessionLoad(async () => {
+				loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
 					sessionId,
 					cwd: this.cwd,
 					mcpServers: [],
 				});
-				sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
-			} else {
-				await this.ctx.request(acp.methods.agent.session.load, {
-					sessionId,
-					cwd: this.cwd,
-					mcpServers: [],
-				});
-			}
+			});
 		} finally {
 			this.replayHandler = null;
+		}
+
+		if (collected.length) {
+			sendHistoryBatch(this.ws, collected);
+			this.historyCache.set(this.historyCacheKey(sessionId), { wireEvents: collected });
+		}
+
+		if (loadResponse?.configOptions) {
+			sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
 		}
 
 		this.session = this.ctx.attachSession({ sessionId });
 		this.pumpPromise = this.pumpUpdates();
 
-		await this.applyPendingModel();
-
-		sendJson(this.ws, { type: "session", sessionId, cached: Boolean(cached) });
-		await this.refreshSessions();
+		sendJson(this.ws, { type: "session", sessionId, cached: Boolean(cached?.wireEvents?.length), cwd: this.cwd });
+		this.sendReady();
+		void this.applyPendingModel();
+		void this.refreshSessions();
+		this.scheduleContextRefresh(0);
 	}
 
 	async createSession() {
@@ -903,10 +1638,18 @@ class PiSession {
 		}
 
 		this.pumpPromise = this.pumpUpdates();
-		await this.applyPendingModel();
-		sendJson(this.ws, { type: "session", sessionId: this.session.sessionId, cached });
-		await this.refreshSessions();
+
+		sendJson(this.ws, {
+			type: "session",
+			sessionId: this.session.sessionId,
+			cached,
+			cwd: this.cwd,
+		});
+		this.sendReady();
+		void this.applyPendingModel();
+		void this.refreshSessions();
 		void this.ensureCachedNewSession();
+		this.scheduleContextRefresh(0);
 	}
 
 	async refreshSessions() {
@@ -914,9 +1657,23 @@ class PiSession {
 			const listResponse = await this.ctx.request(acp.methods.agent.session.list, {
 				cwd: this.cwd,
 			});
-			const sessions = listResponse.sessions ?? [];
+			let sessions = listResponse.sessions ?? [];
+			const activeId = this.session?.sessionId;
+			if (activeId && !sessions.some((session) => session.sessionId === activeId)) {
+				sessions = [
+					{
+						sessionId: activeId,
+						title: null,
+						cwd: this.cwd,
+						updatedAt: new Date().toISOString(),
+					},
+					...sessions,
+				];
+			}
+			this.sessionFileIndex = await buildSessionFileIndex(this.cwd);
 			sendJson(this.ws, { type: "sessions", sessions });
 			this.warmSessionCaches(sessions);
+			this.scheduleContextRefresh(0);
 		} catch {
 			// ignore list errors during refresh
 		}
@@ -934,7 +1691,6 @@ class PiSession {
 
 		try {
 			await this.loadSession(sessionId);
-			this.sendReady();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			sendJson(this.ws, { type: "error", message });
@@ -949,7 +1705,6 @@ class PiSession {
 
 		try {
 			await this.createSession();
-			this.sendReady();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			sendJson(this.ws, { type: "error", message });
@@ -963,6 +1718,9 @@ class PiSession {
 				const message = await activeSession.nextUpdate();
 				if (message.kind === "session_update") {
 					forwardSessionUpdate(message.update, this.ws, { toolTracker: this.toolTracker });
+					if (this.busy && message.update.sessionUpdate !== "usage_update") {
+						this.scheduleContextRefresh(400);
+					}
 				} else if (message.kind === "stop") {
 					this.busy = false;
 					this.invalidateHistoryCache(activeSession.sessionId);
@@ -970,6 +1728,7 @@ class PiSession {
 						type: "done",
 						stopReason: message.stopReason,
 					});
+					this.scheduleContextRefresh(250);
 				}
 			} catch (error) {
 				if (this.closed || this.session !== activeSession) break;
@@ -1068,6 +1827,8 @@ class PiSession {
 
 	async close() {
 		this.closed = true;
+		clearTimeout(this.contextRefreshTimer);
+		this.contextRefreshTimer = null;
 		await this.disconnectAgent();
 	}
 }

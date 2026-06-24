@@ -36,8 +36,7 @@ const modelLabelEl = $("model-label");
 
 const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 const RECENT_PROJECTS_KEY = "pi-web-recent-projects";
-
-const SESSION_ACCENT_COLORS = ["branch-green", "branch-purple", "branch-orange"];
+const ACTIVITY_ART_KEY = "pi-web-activity-art-style";
 
 let ws = null;
 let busy = false;
@@ -57,6 +56,169 @@ let gitInfo = { branch: "master", branches: ["master"], project: "pi-web" };
 let pendingProjectPath = null;
 let lastPrompt = "";
 let fileContextCollapsed = false;
+
+const CONTEXT_DIAL_CIRCUMFERENCE = 43.982;
+let contextUsage = { used: null, size: null, percent: null, breakdown: [] };
+let contextPopoverTimer = null;
+
+const contextDialWrapEl = $("context-dial-wrap");
+const contextDialTriggerEl = $("context-dial-trigger");
+const contextPopoverEl = $("context-popover");
+const contextBreakdownEl = $("context-breakdown");
+const contextPopoverSummaryEl = $("context-popover-summary");
+
+function formatTokenCount(value) {
+	if (value == null || Number.isNaN(value)) return "—";
+	const n = Math.max(0, Math.round(value));
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+	if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+	if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+	return String(n);
+}
+
+function formatBreakdownTokenCount(value) {
+	if (value == null || Number.isNaN(value)) return "—";
+	return Math.max(0, Math.round(value)).toLocaleString();
+}
+
+function contextDialLevel(percent) {
+	if (percent == null) return "unknown";
+	if (percent > 90) return "high";
+	if (percent > 70) return "medium";
+	return "low";
+}
+
+function renderContextBreakdown(breakdown, windowSize) {
+	if (!contextBreakdownEl) return;
+	contextBreakdownEl.replaceChildren();
+
+	const items = Array.isArray(breakdown) ? breakdown : [];
+	if (items.length === 0) {
+		const empty = document.createElement("li");
+		empty.className = "context-breakdown-empty";
+		empty.textContent = "No breakdown available yet";
+		contextBreakdownEl.appendChild(empty);
+		return;
+	}
+
+	const basis =
+		windowSize && windowSize > 0
+			? windowSize
+			: items.reduce((sum, item) => sum + (item.tokens ?? 0), 0);
+
+	for (const item of items) {
+		const li = document.createElement("li");
+		li.className = "context-breakdown-item";
+
+		const label = document.createElement("span");
+		label.className = "context-breakdown-label";
+		label.textContent = item.label ?? item.id ?? "Other";
+		if (item.source) label.title = item.source;
+
+		const bar = document.createElement("span");
+		bar.className = "context-breakdown-bar";
+		const fill = document.createElement("span");
+		const pct = basis > 0 ? Math.min(100, ((item.tokens ?? 0) / basis) * 100) : 0;
+		fill.style.width = `${pct}%`;
+		bar.appendChild(fill);
+
+		const value = document.createElement("span");
+		value.className = "context-breakdown-value";
+		value.textContent = formatBreakdownTokenCount(item.tokens);
+
+		li.append(label, bar, value);
+		contextBreakdownEl.appendChild(li);
+	}
+}
+
+function setContextPopoverOpen(open) {
+	if (!contextDialWrapEl || !contextPopoverEl || !contextDialTriggerEl) return;
+	contextDialWrapEl.classList.toggle("is-open", open);
+	contextPopoverEl.classList.toggle("hidden", !open);
+	contextDialTriggerEl.setAttribute("aria-expanded", String(open));
+}
+
+function renderContextUsage() {
+	if (!contextDialWrapEl) return;
+
+	const { used, size, percent, breakdown } = contextUsage;
+	const show = Boolean(sessionId && currentView === "chat");
+	contextDialWrapEl.classList.toggle("hidden", !show);
+	if (!show) {
+		setContextPopoverOpen(false);
+		return;
+	}
+
+	const level = contextDialLevel(percent);
+	contextDialWrapEl.classList.remove("context-dial--low", "context-dial--medium", "context-dial--high", "context-dial--unknown");
+	contextDialWrapEl.classList.add(`context-dial--${level}`);
+
+	const fill = contextDialWrapEl.querySelector(".context-dial-fill");
+	if (fill) {
+		const pct = percent == null ? 0 : Math.min(Math.max(percent, 0), 100);
+		fill.style.strokeDashoffset = String(CONTEXT_DIAL_CIRCUMFERENCE * (1 - pct / 100));
+	}
+
+	const labelEl = $("context-dial-label");
+	if (labelEl) labelEl.textContent = percent == null ? "—" : `${percent.toFixed(0)}%`;
+
+	if (contextPopoverSummaryEl) {
+		const usedLabel = used == null ? "?" : formatTokenCount(used);
+		const sizeLabel = size == null ? "?" : formatTokenCount(size);
+		contextPopoverSummaryEl.textContent = `${usedLabel} / ${sizeLabel}`;
+	}
+
+	renderContextBreakdown(breakdown, size);
+}
+
+function setContextUsage(next) {
+	contextUsage = {
+		used: next?.used ?? null,
+		size: next?.size ?? null,
+		percent: next?.percent ?? null,
+		breakdown: Array.isArray(next?.breakdown) ? next.breakdown : [],
+	};
+	renderContextUsage();
+}
+
+function resetContextUsage() {
+	setContextUsage({ used: null, size: null, percent: null, breakdown: [] });
+}
+
+function initContextDialPopover() {
+	if (!contextDialWrapEl || !contextPopoverEl) return;
+
+	const openPopover = () => {
+		clearTimeout(contextPopoverTimer);
+		setContextPopoverOpen(true);
+	};
+
+	const closePopover = () => {
+		clearTimeout(contextPopoverTimer);
+		contextPopoverTimer = setTimeout(() => setContextPopoverOpen(false), 120);
+	};
+
+	contextDialWrapEl.addEventListener("mouseenter", openPopover);
+	contextDialWrapEl.addEventListener("mouseleave", closePopover);
+	contextDialWrapEl.addEventListener("focusin", openPopover);
+	contextDialWrapEl.addEventListener("focusout", (event) => {
+		if (!contextDialWrapEl.contains(event.relatedTarget)) closePopover();
+	});
+}
+
+function loadActivityArtStyle() {
+	const styles = window.SessionArt?.styles ?? ["aurora", "identicon", "flow"];
+	try {
+		const stored = localStorage.getItem(ACTIVITY_ART_KEY);
+		if (stored && styles.includes(stored)) return stored;
+	} catch {
+		/* ignore */
+	}
+	return styles[0];
+}
+
+let activityArtStyle = loadActivityArtStyle();
+let artStyleToastTimer = null;
 
 const changedFiles = new Set();
 
@@ -109,6 +271,7 @@ let awaitingNewAgentSession = false;
 let freshDashboardSession = false;
 let pendingDashboardPrompt = null;
 let loadingHistory = false;
+let batchHistoryMode = false;
 let pendingUserMessage = null;
 let commandsTargetInput = inputEl;
 
@@ -168,7 +331,59 @@ function hashCode(str) {
 }
 
 function sessionAccentColor(sessionId) {
-	return SESSION_ACCENT_COLORS[hashCode(sessionId || "default") % SESSION_ACCENT_COLORS.length];
+	const seed = hashCode(sessionId || "default");
+	return SessionArt?.accentColor(activityArtStyle, seed) ?? "var(--muted)";
+}
+
+function applySessionArt(left, sessionId) {
+	if (!window.SessionArt) return;
+
+	const seed = hashCode(sessionId || "default");
+	const art = document.createElement("div");
+	art.className = "activity-card-art";
+
+	const result = SessionArt.render(activityArtStyle, seed);
+	if (result.type === "css") {
+		art.style.background = result.background;
+	} else if (result.type === "svg") {
+		art.innerHTML = result.html;
+	} else if (result.type === "canvas") {
+		art.appendChild(result.element);
+	}
+
+	const scrim = document.createElement("div");
+	scrim.className = "activity-card-scrim";
+	left.append(art, scrim);
+	left.classList.add(`activity-card-left--${activityArtStyle}`);
+}
+
+function showArtStyleToast(style) {
+	let toast = document.getElementById("art-style-toast");
+	if (!toast) {
+		toast = document.createElement("div");
+		toast.id = "art-style-toast";
+		toast.className = "art-style-toast";
+		document.body.appendChild(toast);
+	}
+
+	const label = SessionArt?.labels?.[style] ?? style;
+	toast.textContent = `Activity art: ${label} · Ctrl+Shift+G to cycle`;
+	toast.classList.add("visible");
+	clearTimeout(artStyleToastTimer);
+	artStyleToastTimer = setTimeout(() => toast.classList.remove("visible"), 2000);
+}
+
+function cycleActivityArtStyle() {
+	const styles = SessionArt?.styles ?? ["aurora", "identicon", "flow"];
+	const idx = styles.indexOf(activityArtStyle);
+	activityArtStyle = styles[(idx + 1) % styles.length];
+	try {
+		localStorage.setItem(ACTIVITY_ART_KEY, activityArtStyle);
+	} catch {
+		/* ignore */
+	}
+	renderSessions();
+	showArtStyleToast(activityArtStyle);
 }
 
 function sessionProjectName(session) {
@@ -315,6 +530,7 @@ function statusLabel(status) {
 }
 
 function scrollToBottom() {
+	if (batchHistoryMode) return;
 	const area = $("chat-area");
 	if (area) area.scrollTop = area.scrollHeight;
 }
@@ -354,9 +570,10 @@ function showView(view) {
 	dashboardViewEl.classList.toggle("hidden", view !== "dashboard");
 	chatViewEl.classList.toggle("hidden", view !== "chat");
 	document.querySelectorAll(".nav-item").forEach((el) => {
-		el.classList.toggle("active", el.dataset.view === view || (view === "chat" && el.dataset.view === "new-agent"));
+		el.classList.toggle("active", el.dataset.view === view);
 	});
 	sidebarEl.classList.remove("open");
+	renderContextUsage();
 }
 
 function setNavActive(view) {
@@ -498,6 +715,7 @@ function resetForProjectSwitch(nextCwd) {
 	pendingProjectPath = null;
 	clearChat();
 	showView("dashboard");
+	resetContextUsage();
 	if (nextCwd) setProjectName(nextCwd);
 	renderSessions();
 	renderModelMenu();
@@ -756,17 +974,18 @@ function renderModelMenu() {
 }
 
 function setModels(payload) {
-	if (!Array.isArray(payload?.models)) return;
-	models = payload.models;
-	if (payload.current) currentModelId = payload.current;
+	if (payload?.current) currentModelId = payload.current;
+	if (Array.isArray(payload?.models)) {
+		models = payload.models;
+	}
 	renderModelMenu();
-	renderSessions();
+	if (Array.isArray(payload?.models)) renderSessions();
 }
 
 /* ── Today sidebar & activity feed ── */
 
-function sessionIconSvg(colorClass) {
-	return `<svg class="today-item-icon ${colorClass}" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+function sessionIconSvg(color) {
+	return `<svg class="today-item-icon" style="color:${color}" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
 		<path d="M3 3.5h8a1 1 0 011 1v5a1 1 0 01-1 1H6.5L4 13V9.5H3a1 1 0 01-1-1v-5a1 1 0 011-1z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
 	</svg>`;
 }
@@ -825,6 +1044,11 @@ function renderActivityCardLeft(session, status, isRunning) {
 		return left;
 	}
 
+	applySessionArt(left, session.sessionId);
+
+	const content = document.createElement("div");
+	content.className = "activity-card-content";
+
 	const meta = document.createElement("div");
 	meta.className = "activity-card-meta";
 
@@ -842,7 +1066,8 @@ function renderActivityCardLeft(session, status, isRunning) {
 	badge.className = `activity-badge ${status.variant}`;
 	badge.innerHTML = `${sessionBadgeIcon(status.variant)} ${status.label}`;
 
-	left.append(meta, badge);
+	content.append(meta, badge);
+	left.append(content);
 	return left;
 }
 
@@ -853,7 +1078,7 @@ function renderActivityFeed() {
 	if (list.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "activity-empty";
-		empty.textContent = searchQuery ? "No matching agents" : "No recent activity — start a new agent above";
+		empty.textContent = searchQuery ? "No matching agents" : "No recent activity — ask Pi above";
 		activityFeedEl.appendChild(empty);
 		return;
 	}
@@ -894,12 +1119,18 @@ function renderSessions() {
 	renderActivityFeed();
 	const active = sessions.find((s) => s.sessionId === sessionId);
 	if (active) chatTitleEl.textContent = sessionTitle(active);
+	else if (sessionId) chatTitleEl.textContent = "New Agent";
 }
 
 function upsertSession(entry) {
 	const idx = sessions.findIndex((s) => s.sessionId === entry.sessionId);
-	if (idx >= 0) sessions[idx] = { ...sessions[idx], ...entry };
-	else sessions.push(entry);
+	if (idx >= 0) {
+		const merged = { ...sessions[idx], ...entry };
+		if (entry.title == null && sessions[idx].title) merged.title = sessions[idx].title;
+		sessions[idx] = merged;
+	} else {
+		sessions.push(entry);
+	}
 	renderSessions();
 }
 
@@ -922,21 +1153,6 @@ function newSession() {
 	creatingSession = true;
 	setBusy(busy);
 	ws.send(JSON.stringify({ type: "new_session" }));
-}
-
-function startNewAgent() {
-	setNavActive("new-agent");
-	showView("dashboard");
-	awaitingNewAgentSession = true;
-	freshDashboardSession = false;
-	pendingDashboardPrompt = null;
-	newSession();
-	clearChat();
-	chatTitleEl.textContent = "New Agent";
-	inputEl.value = "";
-	resizeTextarea(inputEl);
-	clearAttachments(inputEl);
-	inputEl.focus();
 }
 
 function clearChangedFiles() {
@@ -1005,6 +1221,89 @@ function renderFileContext() {
 	}
 }
 
+function reorderTurnEvents(events) {
+	const result = [];
+	let turn = [];
+
+	const flushTurn = () => {
+		if (!turn.length) return;
+		const userEvents = turn.filter((e) => e.type === "user_chunk" || e.type === "user");
+		const toolEvents = turn.filter((e) => e.type === "tool");
+		const thoughtEvents = turn.filter((e) => e.type === "thought");
+		const chunkEvents = turn.filter((e) => e.type === "chunk");
+		const planEvents = turn.filter((e) => e.type === "plan");
+		const rest = turn.filter(
+			(e) => !["user_chunk", "user", "tool", "thought", "chunk", "plan"].includes(e.type),
+		);
+		result.push(...userEvents, ...thoughtEvents, ...toolEvents, ...chunkEvents, ...planEvents, ...rest);
+		turn = [];
+	};
+
+	for (const event of events) {
+		if (event.type === "user_chunk" || event.type === "user") {
+			flushTurn();
+			result.push(event);
+			continue;
+		}
+		turn.push(event);
+	}
+	flushTurn();
+	return result;
+}
+
+function applyHistoryEvent(event) {
+	switch (event.type) {
+		case "user_chunk":
+			appendUserChunk(event);
+			break;
+		case "chunk": {
+			flushUserMessage();
+			const chunkText = event.text ?? "";
+			if (chunkText && !shouldSkipStartupContent(chunkText)) {
+				finalizeAssistantTurn();
+				addSystemMessage("assistant", "", renderMarkdown(chunkText));
+				finalizeAssistantTurn();
+			}
+			break;
+		}
+		case "thought": {
+			flushUserMessage();
+			const thoughtText = event.text ?? "";
+			if (thoughtText && !shouldSkipStartupContent(thoughtText)) {
+				finalizeAssistantTurn();
+				addSystemMessage("thought", "Thinking", renderMarkdown(thoughtText));
+				finalizeAssistantTurn();
+			}
+			break;
+		}
+		case "tool":
+			flushUserMessage();
+			finalizeAssistantTurn();
+			updateToolCard(event);
+			break;
+		case "plan":
+			flushUserMessage();
+			finalizeAssistantTurn();
+			addSystemMessage(
+				"system",
+				"Plan",
+				renderMarkdown("\`\`\`json\n" + JSON.stringify(event.entries ?? [], null, 2) + "\n\`\`\`"),
+			);
+			break;
+	}
+}
+
+function applyHistoryBatch(events) {
+	if (!Array.isArray(events) || events.length === 0) return;
+	loadingHistory = true;
+	batchHistoryMode = true;
+	for (const event of reorderTurnEvents(events)) applyHistoryEvent(event);
+	flushUserMessage();
+	finalizeAssistantTurn();
+	batchHistoryMode = false;
+	scrollToBottom();
+}
+
 /* ── Chat messages ── */
 
 function clearChat() {
@@ -1013,6 +1312,7 @@ function clearChat() {
 	clearPendingUserMessage();
 	finalizeAssistantTurn();
 	clearChangedFiles();
+	resetContextUsage();
 }
 
 function addUserMessage(text, images = []) {
@@ -1032,13 +1332,23 @@ function addUserMessage(text, images = []) {
 	scrollToBottom();
 }
 
+function streamingMessageAnchor() {
+	return assistantBlock || thoughtBlock;
+}
+
+function appendChatNode(node, { beforeStreaming = false } = {}) {
+	const anchor = beforeStreaming ? streamingMessageAnchor() : null;
+	if (anchor?.isConnected) messagesEl.insertBefore(node, anchor);
+	else messagesEl.appendChild(node);
+	scrollToBottom();
+}
+
 function addSystemMessage(kind, label, html) {
 	const article = document.createElement("article");
 	article.className = `msg msg-${kind}`;
 	const labelHtml = label ? `<span class="msg-label">${label}</span>` : "";
 	article.innerHTML = `${labelHtml}<div class="msg-content">${html}</div>`;
-	messagesEl.appendChild(article);
-	scrollToBottom();
+	appendChatNode(article);
 	return article;
 }
 
@@ -1101,8 +1411,7 @@ function createToolCard(id) {
 		card.querySelector(".tool-header").setAttribute("aria-expanded", String(expanded));
 	});
 
-	messagesEl.appendChild(card);
-	scrollToBottom();
+	appendChatNode(card, { beforeStreaming: !batchHistoryMode });
 
 	const state = { el: card, title: null, toolName: null, kind: null, rawInput: null, rawOutput: null, status: "running" };
 	toolCards.set(id, state);
@@ -1300,6 +1609,14 @@ function connect() {
 			case "session":
 				sessionId = msg.sessionId ?? null;
 				creatingSession = false;
+				if (sessionId) {
+					upsertSession({
+						sessionId,
+						title: msg.title ?? null,
+						cwd: msg.cwd ?? cwd,
+						updatedAt: msg.updatedAt ?? new Date().toISOString(),
+					});
+				}
 				if (awaitingNewAgentSession) {
 					awaitingNewAgentSession = false;
 					freshDashboardSession = true;
@@ -1312,11 +1629,20 @@ function connect() {
 				}
 				renderSessions();
 				setBusy(busy);
+				renderContextUsage();
+				break;
+
+			case "history":
+				applyHistoryBatch(msg.events);
 				break;
 
 			case "clear":
 				clearChat();
 				loadingHistory = false;
+				break;
+
+			case "context":
+				setContextUsage(msg);
 				break;
 
 			case "status":
@@ -1513,10 +1839,6 @@ chatInputEl.addEventListener("input", () => {
 	updateChatSlashCommands();
 });
 
-$("nav-new-agent").addEventListener("click", () => {
-	startNewAgent();
-});
-
 $("nav-dashboard").addEventListener("click", () => {
 	setNavActive("dashboard");
 	showView("dashboard");
@@ -1524,7 +1846,6 @@ $("nav-dashboard").addEventListener("click", () => {
 
 $("back-to-dashboard").addEventListener("click", () => {
 	showView("dashboard");
-	setNavActive("new-agent");
 });
 
 sidebarToggleEl.addEventListener("click", () => sidebarEl.classList.toggle("open"));
@@ -1549,6 +1870,11 @@ commandsOverlayEl.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
 	if (e.key === "Escape") closeCommands();
+	if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "g") {
+		e.preventDefault();
+		cycleActivityArtStyle();
+		return;
+	}
 	if (e.key === "/" && document.activeElement !== inputEl && document.activeElement !== chatInputEl) {
 		e.preventDefault();
 		openCommands();
@@ -1594,6 +1920,7 @@ document.addEventListener("click", (e) => {
 /* ── Init ── */
 
 initDropdowns();
+initContextDialPopover();
 fetchGitInfo();
 connect();
 showView("dashboard");

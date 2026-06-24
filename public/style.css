@@ -217,18 +217,6 @@ input {
 	color: var(--orange);
 }
 
-.today-item-icon.branch-green {
-	color: var(--green);
-}
-
-.today-item-icon.branch-purple {
-	color: var(--purple);
-}
-
-.today-item-icon.branch-orange {
-	color: var(--orange);
-}
-
 .today-item-body {
 	flex: 1;
 	min-width: 0;
@@ -545,6 +533,173 @@ input {
 	50% {
 		opacity: 0.35;
 	}
+}
+
+.context-dial-wrap {
+	position: relative;
+	display: inline-flex;
+	flex-shrink: 0;
+}
+
+.context-dial {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	flex-shrink: 0;
+	color: var(--muted);
+	padding: 0.15rem 0.25rem;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	cursor: default;
+}
+
+.context-dial:hover,
+.context-dial-wrap.is-open .context-dial {
+	background: rgba(255, 255, 255, 0.05);
+	color: var(--text);
+}
+
+.context-dial-svg {
+	display: block;
+	transform: rotate(-90deg);
+}
+
+.context-dial-track,
+.context-dial-fill {
+	fill: none;
+	stroke-width: 2;
+}
+
+.context-dial-track {
+	stroke: rgba(255, 255, 255, 0.1);
+}
+
+.context-dial-fill {
+	stroke: var(--green);
+	stroke-linecap: round;
+	stroke-dasharray: 43.982;
+	stroke-dashoffset: 43.982;
+	transition:
+		stroke-dashoffset 0.35s ease,
+		stroke 0.2s ease;
+}
+
+.context-dial--medium .context-dial-fill {
+	stroke: var(--orange);
+}
+
+.context-dial--high .context-dial-fill {
+	stroke: var(--red);
+}
+
+.context-dial--unknown .context-dial-fill {
+	stroke: var(--muted-dim);
+	opacity: 0.35;
+}
+
+.context-dial-label {
+	font-size: 0.72rem;
+	font-variant-numeric: tabular-nums;
+	color: var(--muted);
+	min-width: 2.5rem;
+}
+
+.context-dial--medium .context-dial-label,
+.context-dial--high .context-dial-label {
+	color: var(--text);
+}
+
+.context-popover {
+	position: absolute;
+	left: 0;
+	bottom: calc(100% + 0.55rem);
+	z-index: 220;
+	width: min(18rem, calc(100vw - 2rem));
+	padding: 0.65rem 0.7rem;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: #1a1a1a;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.context-popover-header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.75rem;
+	margin-bottom: 0.55rem;
+}
+
+.context-popover-title {
+	font-size: 0.72rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--muted);
+}
+
+.context-popover-summary {
+	font-size: 0.78rem;
+	font-variant-numeric: tabular-nums;
+	color: var(--text);
+	white-space: nowrap;
+}
+
+.context-breakdown {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.45rem;
+}
+
+.context-breakdown-item {
+	display: grid;
+	grid-template-columns: minmax(5.5rem, 1fr) 4.5rem 2.5rem;
+	align-items: center;
+	gap: 0.45rem;
+}
+
+.context-breakdown-label {
+	font-size: 0.76rem;
+	color: var(--muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.context-breakdown-bar {
+	height: 4px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.08);
+	overflow: hidden;
+}
+
+.context-breakdown-bar span {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--accent);
+}
+
+.context-breakdown-value {
+	font-size: 0.72rem;
+	font-variant-numeric: tabular-nums;
+	color: var(--text);
+	text-align: right;
+}
+
+.context-breakdown-empty {
+	font-size: 0.76rem;
+	color: var(--muted);
+}
+
+.context-popover-note {
+	margin: 0.55rem 0 0;
+	font-size: 0.68rem;
+	color: var(--muted-dim);
 }
 
 /* ── Dashboard body ── */
@@ -931,19 +1086,74 @@ input {
 }
 
 .activity-card-left {
+	position: relative;
 	flex-shrink: 0;
 	width: 148px;
 	min-height: 68px;
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
-	gap: 0.45rem;
+	overflow: hidden;
 	padding: 0.6rem 0.7rem;
 	border-radius: 8px;
 	background: #0f0f0f;
 	border: 1px solid var(--border-subtle);
 	font-family: ui-monospace, "SF Mono", Menlo, monospace;
 	font-size: 0.72rem;
+}
+
+.activity-card-art {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+.activity-card-art svg,
+.activity-card-art canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.activity-card-left--aurora .activity-card-art canvas {
+	filter: saturate(1.08);
+}
+
+.activity-card-scrim {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	background: linear-gradient(
+		to top,
+		rgba(0, 0, 0, 0.7) 0%,
+		rgba(0, 0, 0, 0.22) 48%,
+		rgba(0, 0, 0, 0.06) 100%
+	);
+}
+
+.activity-card-left--aurora .activity-card-scrim {
+	background: linear-gradient(
+		to top,
+		rgba(0, 0, 0, 0.75) 0%,
+		rgba(0, 0, 0, 0.18) 42%,
+		rgba(0, 0, 0, 0.04) 100%
+	);
+}
+
+.activity-card-time {
+	color: var(--text);
+	font-weight: 500;
+	text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+}
+
+.activity-card-content {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 0.45rem;
+	min-height: 100%;
 }
 
 .activity-card-left.code-preview {
@@ -963,11 +1173,6 @@ input {
 	flex-direction: column;
 	gap: 0.2rem;
 	font-size: 0.75rem;
-}
-
-.activity-card-time {
-	color: var(--text);
-	font-weight: 500;
 }
 
 .activity-card-project {
@@ -1040,6 +1245,28 @@ input {
 	text-align: center;
 	color: var(--muted-dim);
 	font-size: 0.85rem;
+}
+
+.art-style-toast {
+	position: fixed;
+	bottom: 1.25rem;
+	left: 50%;
+	transform: translateX(-50%) translateY(0.5rem);
+	z-index: 200;
+	padding: 0.45rem 0.85rem;
+	border-radius: 8px;
+	border: 1px solid var(--border);
+	background: rgba(20, 20, 20, 0.92);
+	color: var(--muted);
+	font-size: 0.78rem;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.2s, transform 0.2s;
+}
+
+.art-style-toast.visible {
+	opacity: 1;
+	transform: translateX(-50%) translateY(0);
 }
 
 /* ── Chat view ── */
@@ -1500,20 +1727,15 @@ input {
 	color: var(--muted);
 }
 
-/* ── Scrollbar ── */
+/* ── Scrollbar (hidden, scroll still works) ── */
 
-::-webkit-scrollbar {
-	width: 6px;
-	height: 6px;
+* {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
 }
 
-::-webkit-scrollbar-track {
-	background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-	background: var(--border);
-	border-radius: 999px;
+*::-webkit-scrollbar {
+	display: none;
 }
 
 /* ── Responsive ── */
