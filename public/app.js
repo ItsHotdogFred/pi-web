@@ -20,16 +20,14 @@ const chatInputEl = $("chat-input");
 const cancelEl = $("cancel");
 const fileContextEl = $("file-context");
 const sidebarEl = $("sidebar");
-const sidebarToggleEl = $("sidebar-toggle");
 const searchBtnEl = $("search-btn");
 const sidebarSearchEl = $("sidebar-search");
 const searchInputEl = $("search-input");
-const commandsOverlayEl = $("commands-overlay");
-const commandsInputEl = $("commands-input");
-const commandsListEl = $("commands-list");
 const commandsHintEl = $("commands-hint");
 const inlineCommandsEl = $("inline-commands");
 const inlineCommandsListEl = $("inline-commands-list");
+const chatInlineCommandsEl = $("chat-inline-commands");
+const chatInlineCommandsListEl = $("chat-inline-commands-list");
 const fileInputEl = $("file-input");
 const attachBtnEl = $("attach-btn");
 const modelLabelEl = $("model-label");
@@ -48,6 +46,7 @@ let searchQuery = "";
 let currentView = "dashboard";
 let models = [];
 let currentModelId = null;
+let pendingModelSelection = null;
 let modelSearchQuery = "";
 let modelSearchTimer = null;
 let activeModelScope = "dashboard";
@@ -273,7 +272,6 @@ let pendingDashboardPrompt = null;
 let loadingHistory = false;
 let batchHistoryMode = false;
 let pendingUserMessage = null;
-let commandsTargetInput = inputEl;
 
 /* ── Utilities ── */
 
@@ -708,6 +706,7 @@ function resetForProjectSwitch(nextCwd) {
 	commands = [];
 	models = [];
 	currentModelId = null;
+	pendingModelSelection = null;
 	creatingSession = false;
 	awaitingNewAgentSession = false;
 	freshDashboardSession = false;
@@ -916,7 +915,14 @@ function setupModelSearchForScope(scope) {
 	});
 
 	modelSearch.addEventListener("click", (e) => e.stopPropagation());
-	modelSearch.addEventListener("keydown", (e) => e.stopPropagation());
+	modelSearch.addEventListener("keydown", (e) => {
+		e.stopPropagation();
+		if (e.key === "Enter") {
+			e.preventDefault();
+			const first = filteredModels()[0];
+			if (first) selectModel(first.id);
+		}
+	});
 }
 
 function setupModelSearch() {
@@ -934,6 +940,24 @@ function filteredModels() {
 			model.id.toLowerCase().includes(q) ||
 			(model.description && model.description.toLowerCase().includes(q)),
 	);
+}
+
+function selectModel(modelId) {
+	if (!modelId) {
+		closeAllDropdowns();
+		return;
+	}
+	if (modelId !== currentModelId) {
+		currentModelId = modelId;
+		pendingModelSelection = modelId;
+		syncModelLabels();
+		renderModelMenuList("model-menu-list");
+		renderModelMenuList("chat-model-menu-list");
+		if (ws?.readyState === WebSocket.OPEN) {
+			ws.send(JSON.stringify({ type: "set_model", value: modelId }));
+		}
+	}
+	closeAllDropdowns();
 }
 
 function renderModelMenuList(listId = "model-menu-list") {
@@ -956,12 +980,7 @@ function renderModelMenuList(listId = "model-menu-list") {
 		btn.type = "button";
 		btn.className = "dropdown-item" + (model.id === currentModelId ? " selected" : "");
 		btn.innerHTML = `<span class="model-option-name">${model.name}</span>${model.description ? `<span class="model-option-desc">${model.description}</span>` : ""}`;
-		btn.addEventListener("click", () => {
-			if (ws?.readyState === WebSocket.OPEN && model.id !== currentModelId) {
-				ws.send(JSON.stringify({ type: "set_model", value: model.id }));
-			}
-			closeAllDropdowns();
-		});
+		btn.addEventListener("click", () => selectModel(model.id));
 		list.appendChild(btn);
 	}
 }
@@ -974,7 +993,12 @@ function renderModelMenu() {
 }
 
 function setModels(payload) {
-	if (payload?.current) currentModelId = payload.current;
+	if (payload?.current) {
+		if (!pendingModelSelection || payload.current === pendingModelSelection) {
+			currentModelId = payload.current;
+			if (payload.current === pendingModelSelection) pendingModelSelection = null;
+		}
+	}
 	if (Array.isArray(payload?.models)) {
 		models = payload.models;
 	}
@@ -1470,8 +1494,6 @@ function filteredCommands(filter) {
 
 function applyCommand(command, targetInput = getActiveInput()) {
 	const suffix = command.hint ? " " : "";
-	closeCommands();
-	inlineCommandsEl.classList.add("hidden");
 	targetInput.value = `/${command.name}${suffix}`;
 	targetInput.dispatchEvent(new Event("input"));
 	targetInput.focus();
@@ -1499,51 +1521,46 @@ function renderCommandsInto(listEl, filter, onSelect) {
 	}
 }
 
-function updateInlineCommands() {
-	const target = inputEl;
-	const show = target.value.startsWith("/");
-	inlineCommandsEl.classList.toggle("hidden", !show);
+function updateSlashCommands(targetInput, containerEl, listEl) {
+	const show = targetInput.value.startsWith("/");
+	containerEl.classList.toggle("hidden", !show);
 	if (!show) return;
 
-	const query = target.value.slice(1).split(/\s/)[0] ?? "";
-	renderCommandsInto(inlineCommandsListEl, query, (command) => applyCommand(command, target));
+	const query = targetInput.value.slice(1).split(/\s/)[0] ?? "";
+	renderCommandsInto(listEl, query, (command) => applyCommand(command, targetInput));
+}
+
+function updateInlineCommands() {
+	updateSlashCommands(inputEl, inlineCommandsEl, inlineCommandsListEl);
 }
 
 function updateChatSlashCommands() {
-	if (!chatInputEl.value.startsWith("/")) {
-		if (!commandsInputEl.matches(":focus")) closeCommands();
-		return;
-	}
-
-	commandsTargetInput = chatInputEl;
-	commandsOverlayEl.classList.remove("hidden");
-	const query = chatInputEl.value.slice(1).split(/\s/)[0] ?? "";
-	commandsInputEl.value = query;
-	renderCommandsList(query);
+	updateSlashCommands(chatInputEl, chatInlineCommandsEl, chatInlineCommandsListEl);
 }
 
 function openCommands(targetInput = getActiveInput()) {
-	commandsTargetInput = targetInput;
-	commandsOverlayEl.classList.remove("hidden");
-	commandsInputEl.value = "";
-	renderCommandsList("");
-	commandsInputEl.focus();
+	targetInput.focus();
+	if (!targetInput.value.startsWith("/")) {
+		targetInput.value = "/";
+	}
+	targetInput.dispatchEvent(new Event("input"));
+	targetInput.setSelectionRange(targetInput.value.length, targetInput.value.length);
 }
 
 function closeCommands() {
-	commandsOverlayEl.classList.add("hidden");
-}
-
-function renderCommandsList(filter) {
-	renderCommandsInto(commandsListEl, filter, (command) => applyCommand(command, commandsTargetInput));
+	inlineCommandsEl.classList.add("hidden");
+	chatInlineCommandsEl.classList.add("hidden");
+	const target = getActiveInput();
+	if (target.value.startsWith("/") && !target.value.slice(1).includes(" ")) {
+		target.value = "";
+		target.dispatchEvent(new Event("input"));
+	}
 }
 
 function setCommands(nextCommands) {
 	commands = Array.isArray(nextCommands) ? nextCommands : [];
 	if (!inlineCommandsEl.classList.contains("hidden")) updateInlineCommands();
-	if (!commandsOverlayEl.classList.contains("hidden")) {
-		renderCommandsList(commandsInputEl.value);
-	}
+	if (!chatInlineCommandsEl.classList.contains("hidden")) updateChatSlashCommands();
 }
 
 /* ── WebSocket ── */
@@ -1848,8 +1865,6 @@ $("back-to-dashboard").addEventListener("click", () => {
 	showView("dashboard");
 });
 
-sidebarToggleEl.addEventListener("click", () => sidebarEl.classList.toggle("open"));
-
 searchBtnEl.addEventListener("click", () => {
 	sidebarSearchEl.classList.toggle("hidden");
 	if (!sidebarSearchEl.classList.contains("hidden")) searchInputEl.focus();
@@ -1860,13 +1875,7 @@ searchInputEl.addEventListener("input", () => {
 	renderSessions();
 });
 
-commandsHintEl.addEventListener("click", openCommands);
-
-commandsInputEl.addEventListener("input", () => renderCommandsList(commandsInputEl.value));
-
-commandsOverlayEl.addEventListener("click", (e) => {
-	if (e.target === commandsOverlayEl) closeCommands();
-});
+commandsHintEl.addEventListener("click", () => openCommands(inputEl));
 
 document.addEventListener("keydown", (e) => {
 	if (e.key === "Escape") closeCommands();
@@ -1903,18 +1912,6 @@ fileInputEl.addEventListener("change", () => {
 $("file-context-toggle")?.addEventListener("click", () => {
 	fileContextCollapsed = !fileContextCollapsed;
 	renderFileContext();
-});
-
-document.addEventListener("click", (e) => {
-	if (
-		window.innerWidth <= 768 &&
-		sidebarEl.classList.contains("open") &&
-		!sidebarEl.contains(e.target) &&
-		e.target !== sidebarToggleEl &&
-		!sidebarToggleEl.contains(e.target)
-	) {
-		sidebarEl.classList.remove("open");
-	}
 });
 
 /* ── Init ── */

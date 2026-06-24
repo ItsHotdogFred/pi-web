@@ -3,3 +3,11 @@ node_modules/
 .env.*
 *.log
 nul
+
+# Pake desktop build artifacts
+.pake-target/
+Pi-Desktop.exe
+Pi-Desktop.msi
+
+# Promo video tooling and outputs
+promo/

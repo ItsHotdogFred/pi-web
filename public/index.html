@@ -11,12 +11,6 @@
 		<div class="app">
 			<aside class="sidebar" id="sidebar">
 				<div class="sidebar-top">
-					<button type="button" class="icon-btn" id="sidebar-toggle" aria-label="Toggle sidebar">
-						<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-							<rect x="2" y="2" width="5" height="12" rx="1" stroke="currentColor" stroke-width="1.25" />
-							<path d="M10 4.5h4M10 8h4M10 11.5h4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
-						</svg>
-					</button>
 					<button type="button" class="icon-btn" id="search-btn" aria-label="Search">
 						<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
 							<circle cx="7" cy="7" r="4.25" stroke="currentColor" stroke-width="1.25" />
@@ -96,6 +90,10 @@
 					</header>
 
 					<div class="dashboard-body">
+						<div class="inline-commands hidden" id="inline-commands" aria-label="Slash commands">
+							<ul class="inline-commands-list" id="inline-commands-list"></ul>
+						</div>
+
 						<form class="composer-box home-composer" id="composer">
 							<textarea
 								id="input"
@@ -145,10 +143,6 @@
 							</div>
 						</form>
 
-						<div class="inline-commands hidden" id="inline-commands" aria-label="Slash commands">
-							<ul class="inline-commands-list" id="inline-commands-list"></ul>
-						</div>
-
 						<button type="button" class="commands-hint" id="commands-hint">
 							Try Commands <kbd>/</kbd>
 						</button>
@@ -187,6 +181,10 @@
 							<div class="file-context-body" id="file-context-body">
 								<ul class="file-context-list" id="file-context-list"></ul>
 							</div>
+						</div>
+
+						<div class="inline-commands hidden" id="chat-inline-commands" aria-label="Slash commands">
+							<ul class="inline-commands-list" id="chat-inline-commands-list"></ul>
 						</div>
 
 						<form class="composer-box chat-composer-box" id="chat-composer">
@@ -263,14 +261,6 @@
 					</div>
 				</div>
 			</main>
-		</div>
-
-		<!-- Commands palette -->
-		<div class="commands-overlay hidden" id="commands-overlay" role="dialog" aria-modal="true" aria-label="Commands">
-			<div class="commands-panel">
-				<input type="text" id="commands-input" placeholder="Type a command…" autocomplete="off" />
-				<ul class="commands-list" id="commands-list"></ul>
-			</div>
 		</div>
 
 		<input type="file" id="file-input" accept="image/*" class="hidden" />
