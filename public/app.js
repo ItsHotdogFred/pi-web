@@ -336,12 +336,7 @@ function renderContextUsage() {
 
 	if (contextActionsEl) {
 		const showActions =
-			Boolean(sessionId) &&
-			currentView === "chat" &&
-			percent != null &&
-			percent >= 70 &&
-			!busy &&
-			!creatingSession;
+			Boolean(sessionId) && currentView === "chat" && percent != null && percent >= 70;
 		contextActionsEl.classList.toggle("hidden", !showActions);
 		contextActionsEl.classList.toggle("context-actions--high", level === "high");
 	}
