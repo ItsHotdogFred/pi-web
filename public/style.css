@@ -1218,16 +1218,26 @@ input {
 /* ── Inline commands (above composer) ── */
 
 .inline-commands {
-	margin-bottom: 0.5rem;
-	border: 1px solid var(--border-subtle);
+	display: grid;
+	grid-template-rows: 0fr;
+	margin-bottom: 0;
+	border: 1px solid transparent;
 	border-radius: 10px;
-	background: #0f0f0f;
+	background: transparent;
 	overflow: hidden;
 	transform-origin: top center;
+	transition:
+		grid-template-rows 0.26s cubic-bezier(0.33, 1, 0.68, 1),
+		margin-bottom 0.26s cubic-bezier(0.33, 1, 0.68, 1),
+		border-color 0.2s ease,
+		background-color 0.2s ease;
 }
 
-.inline-commands.anim-fade-down {
-	animation: fade-down 0.18s ease both;
+.inline-commands.is-open {
+	grid-template-rows: 1fr;
+	margin-bottom: 0.5rem;
+	border-color: var(--border-subtle);
+	background: #0f0f0f;
 }
 
 .inline-commands-list {
@@ -1236,6 +1246,11 @@ input {
 	list-style: none;
 	max-height: 220px;
 	overflow-y: auto;
+	min-height: 0;
+}
+
+.inline-commands-list.anim-fade-down {
+	animation: fade-down 0.22s cubic-bezier(0.33, 1, 0.68, 1) both;
 }
 
 .inline-commands-list li button {
@@ -1561,6 +1576,20 @@ input {
 	flex: 1;
 	overflow-y: auto;
 	min-height: 0;
+}
+
+.chat-area.view-leaving {
+	animation: view-exit 0.18s ease forwards;
+	pointer-events: none;
+}
+
+.chat-area.session-switch-hidden {
+	opacity: 0;
+	pointer-events: none;
+}
+
+.chat-area.view-entering {
+	animation: view-enter 0.24s ease both;
 }
 
 .messages {

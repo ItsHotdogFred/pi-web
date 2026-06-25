@@ -1126,9 +1126,9 @@ function updateToWireEvents(update, toolTracker) {
 	}
 }
 
-function sendHistoryBatch(ws, events) {
+function sendHistoryBatch(ws, events, extra = {}) {
 	if (!events?.length) return;
-	sendJson(ws, { type: "history", events });
+	sendJson(ws, { type: "history", events, ...extra });
 }
 
 function truncateWire(value, max = MAX_WIRE_CHARS) {
@@ -1424,6 +1424,7 @@ class PiSession {
 		this.historyCachePromises = new Map();
 		this.preloadChain = Promise.resolve();
 		this.sessionLoadMutex = Promise.resolve();
+		this.sessionLoadGeneration = 0;
 		this.sessionFileIndex = new Map();
 		this.contextRefreshTimer = null;
 		this.pendingPermissions = new Map();
@@ -1765,6 +1766,7 @@ class PiSession {
 		this.cwd = resolved;
 		this.pendingModelId = null;
 		this.defaultsFetched = false;
+		this.sessionLoadGeneration++;
 		invalidateSessionFileIndex(resolved);
 
 		await this.disconnectAgent();
@@ -1783,13 +1785,14 @@ class PiSession {
 		}
 	}
 
-	sendReady() {
+	sendReady(extra = {}) {
 		sendJson(this.ws, {
 			type: "status",
 			state: "ready",
 			sessionId: this.session?.sessionId,
 			protocolVersion: this.protocolVersion,
 			cwd: this.cwd,
+			...extra,
 		});
 	}
 
@@ -1814,57 +1817,76 @@ class PiSession {
 		this.releaseBusy("cancelled");
 	}
 
-	async loadSession(sessionId, { replay = true } = {}) {
-		await this.disposeActiveSession();
+	async loadSession(sessionId, { replay = true, requestId = null, generation = null } = {}) {
+		const meta = requestId == null ? {} : { requestId };
+		const isStale = () => generation != null && generation !== this.sessionLoadGeneration;
+		const cached = replay ? await this.getHistoryCache(sessionId) : null;
 
-		sendJson(this.ws, { type: "clear" });
+		if (this.closed || isStale()) return;
+
+		sendJson(this.ws, { type: "clear", ...meta });
 		this.toolTracker.reset();
 
-		const cached = replay ? await this.getHistoryCache(sessionId) : null;
-		const collected = [];
-
 		if (cached?.wireEvents?.length) {
-			sendJson(this.ws, { type: "status", state: "loading_history" });
-			sendHistoryBatch(this.ws, cached.wireEvents);
+			sendJson(this.ws, { type: "status", state: "loading_history", ...meta });
+			sendHistoryBatch(this.ws, cached.wireEvents, meta);
 		} else if (replay) {
-			sendJson(this.ws, { type: "status", state: "loading_history" });
-			this.replayHandler = (params) => {
-				for (const event of updateToWireEvents(params.update, this.toolTracker)) {
-					collected.push(event);
-				}
-			};
+			sendJson(this.ws, { type: "status", state: "loading_history", ...meta });
 		}
 
-		let loadResponse = null;
-		try {
-			await this.withSessionLoad(async () => {
+		await this.withSessionLoad(async () => {
+			if (this.closed || isStale()) return;
+
+			await this.disposeActiveSession();
+			if (this.closed || isStale()) return;
+
+			this.toolTracker.reset();
+
+			const collected = [];
+
+			if (this.closed || isStale()) return;
+
+			if (cached?.wireEvents?.length) {
+				// Already replayed from disk above so the UI can update immediately.
+			} else if (replay) {
+				this.replayHandler = (params) => {
+					for (const event of updateToWireEvents(params.update, this.toolTracker)) {
+						collected.push(event);
+					}
+				};
+			}
+
+			let loadResponse = null;
+			try {
 				loadResponse = await this.ctx.request(acp.methods.agent.session.load, {
 					sessionId,
 					cwd: this.cwd,
 					mcpServers: [],
 				});
-			});
-		} finally {
-			this.replayHandler = null;
-		}
+			} finally {
+				this.replayHandler = null;
+			}
 
-		if (collected.length) {
-			sendHistoryBatch(this.ws, collected);
-			this.historyCache.set(this.historyCacheKey(sessionId), { wireEvents: collected });
-		}
+			if (this.closed || isStale()) return;
 
-		if (loadResponse?.configOptions) {
-			sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
-		}
+			if (collected.length) {
+				sendHistoryBatch(this.ws, collected, meta);
+				this.historyCache.set(this.historyCacheKey(sessionId), { wireEvents: collected });
+			}
 
-		this.session = this.ctx.attachSession({ sessionId });
-		this.pumpPromise = this.pumpUpdates();
+			if (loadResponse?.configOptions) {
+				sendModelsFromConfigOptions(this.ws, loadResponse.configOptions);
+			}
 
-		sendJson(this.ws, { type: "session", sessionId, cached: Boolean(cached?.wireEvents?.length), cwd: this.cwd });
-		this.sendReady();
-		void this.applyPendingModel();
-		void this.refreshSessions();
-		this.scheduleContextRefresh(0);
+			this.session = this.ctx.attachSession({ sessionId });
+			this.pumpPromise = this.pumpUpdates();
+
+			sendJson(this.ws, { type: "session", sessionId, cached: Boolean(cached?.wireEvents?.length), cwd: this.cwd, ...meta });
+			this.sendReady(meta);
+			void this.applyPendingModel();
+			void this.refreshSessions();
+			this.scheduleContextRefresh(0);
+		});
 	}
 
 	async createSession() {
@@ -1917,7 +1939,6 @@ class PiSession {
 						sessionId: activeId,
 						title: null,
 						cwd: this.cwd,
-						updatedAt: new Date().toISOString(),
 					},
 					...sessions,
 				];
@@ -1931,21 +1952,24 @@ class PiSession {
 		}
 	}
 
-	async switchSession(sessionId) {
+	async switchSession(sessionId, requestId = null) {
 		if (!sessionId) {
-			sendJson(this.ws, { type: "error", message: "sessionId is required" });
+			sendJson(this.ws, { type: "error", message: "sessionId is required", ...(requestId == null ? {} : { requestId }) });
 			return;
 		}
 		if (this.busy) {
-			sendJson(this.ws, { type: "error", message: "Pi is still working on the previous message" });
+			sendJson(this.ws, { type: "error", message: "Pi is still working on the previous message", ...(requestId == null ? {} : { requestId }) });
 			return;
 		}
 
+		const generation = ++this.sessionLoadGeneration;
 		try {
-			await this.loadSession(sessionId);
+			await this.loadSession(sessionId, { requestId, generation });
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			sendJson(this.ws, { type: "error", message });
+			if (generation === this.sessionLoadGeneration) {
+				sendJson(this.ws, { type: "error", message, ...(requestId == null ? {} : { requestId }) });
+			}
 		}
 	}
 
@@ -1955,6 +1979,7 @@ class PiSession {
 			return;
 		}
 
+		this.sessionLoadGeneration++;
 		try {
 			await this.createSession();
 		} catch (error) {
@@ -2144,7 +2169,7 @@ async function handleWebSocket(ws) {
 		} else if (msg.type === "cancel") {
 			await pi.cancel();
 		} else if (msg.type === "switch_session") {
-			await pi.switchSession(msg.sessionId);
+			await pi.switchSession(msg.sessionId, msg.requestId ?? null);
 		} else if (msg.type === "new_session") {
 			await pi.newSession();
 		} else if (msg.type === "compact") {

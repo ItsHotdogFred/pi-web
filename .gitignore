@@ -4,10 +4,19 @@ node_modules/
 *.log
 nul
 
+# Pi desktop (local only — not pushed to GitHub)
+desktop/
+scripts/
+
 # Pake desktop build artifacts
 .pake-target/
 Pi-Desktop.exe
+Pi-Desktop-Shell.exe
 Pi-Desktop.msi
+node/
+pi-desktop-server.log
+pi-desktop-launcher.log
+dist/
 
 # Promo video tooling and outputs
 promo/

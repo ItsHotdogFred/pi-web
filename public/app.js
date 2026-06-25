@@ -11,6 +11,7 @@ const contribGraphLearnEl = $("contrib-graph-learn");
 const contribGraphNoteEl = $("contrib-graph-note");
 const dashboardViewEl = $("dashboard-view");
 const chatViewEl = $("chat-view");
+const chatAreaEl = $("chat-area");
 const messagesEl = $("messages");
 const statusEl = $("status");
 const chatStatusEl = $("chat-status");
@@ -69,6 +70,10 @@ let pendingProjectPath = null;
 let lastPrompt = "";
 let fileContextCollapsed = false;
 let viewTransitioning = false;
+let sessionSwitchAnimating = false;
+let sessionSwitchRequestId = 0;
+let activeSessionSwitchRequestId = null;
+let sessionSwitchAnimationToken = 0;
 let animateActivityFeed = false;
 
 function prefersReducedMotion() {
@@ -901,7 +906,68 @@ function syncModelLabels() {
 
 /* ── Views ── */
 
+function startSessionSwitchAnimation() {
+	if (sessionSwitchAnimating) {
+		if (!prefersReducedMotion() && chatAreaEl) {
+			chatAreaEl.classList.remove("view-entering");
+			if (!chatAreaEl.classList.contains("view-leaving")) {
+				chatAreaEl.classList.add("session-switch-hidden");
+			}
+		}
+		return;
+	}
+
+	sessionSwitchAnimating = true;
+	const token = ++sessionSwitchAnimationToken;
+	if (prefersReducedMotion() || !chatAreaEl) return;
+	chatAreaEl.classList.remove("view-leaving", "view-entering", "session-switch-hidden");
+	chatAreaEl.classList.add("view-leaving");
+	chatAreaEl.addEventListener(
+		"animationend",
+		() => {
+			if (token !== sessionSwitchAnimationToken) return;
+			chatAreaEl.classList.remove("view-leaving");
+			chatAreaEl.classList.add("session-switch-hidden");
+		},
+		{ once: true },
+	);
+}
+
+function finishSessionSwitchAnimation(requestId = null) {
+	if (requestId == null && activeSessionSwitchRequestId != null) return;
+	if (requestId != null && requestId !== activeSessionSwitchRequestId) return;
+	if (!sessionSwitchAnimating) return;
+	const token = ++sessionSwitchAnimationToken;
+	if (prefersReducedMotion() || !chatAreaEl) {
+		sessionSwitchAnimating = false;
+		return;
+	}
+	chatAreaEl.classList.remove("view-leaving", "session-switch-hidden");
+	chatAreaEl.classList.add("view-entering");
+	chatAreaEl.addEventListener(
+		"animationend",
+		() => {
+			if (token !== sessionSwitchAnimationToken) return;
+			chatAreaEl.classList.remove("view-entering");
+			sessionSwitchAnimating = false;
+		},
+		{ once: true },
+	);
+}
+
+function cancelSessionSwitchAnimation() {
+	sessionSwitchAnimationToken++;
+	sessionSwitchAnimating = false;
+	activeSessionSwitchRequestId = null;
+	chatAreaEl?.classList.remove("view-leaving", "view-entering", "session-switch-hidden");
+}
+
+function isStaleSwitchMessage(msg) {
+	return msg.requestId != null && msg.requestId !== activeSessionSwitchRequestId;
+}
+
 function showView(view, { animate = true } = {}) {
+	if (view !== "chat") cancelSessionSwitchAnimation();
 	const prevView = currentView;
 	if (view === prevView && !viewTransitioning) {
 		document.querySelectorAll(".nav-item").forEach((el) => {
@@ -913,7 +979,7 @@ function showView(view, { animate = true } = {}) {
 	}
 
 	currentView = view;
-	if (view === "dashboard") animateActivityFeed = animate;
+	if (view === "dashboard") animateActivityFeed = animate && activityFeedEl.childElementCount === 0;
 
 	document.querySelectorAll(".nav-item").forEach((el) => {
 		el.classList.toggle("active", el.dataset.view === view);
@@ -1700,17 +1766,27 @@ function openSession(id) {
 	awaitingNewAgentSession = false;
 	freshDashboardSession = false;
 	pendingDashboardPrompt = null;
-	switchSession(id);
+
+	const switchingSession = currentView === "chat" && id !== sessionId;
+	const requestId = switchingSession ? ++sessionSwitchRequestId : null;
+	if (switchingSession) {
+		activeSessionSwitchRequestId = requestId;
+		startSessionSwitchAnimation();
+	}
+	sessionId = id;
+	renderSessions();
+	switchSession(id, requestId);
 	showView("chat");
 }
 
-function switchSession(id) {
+function switchSession(id, requestId = null) {
 	if (!ws || ws.readyState !== WebSocket.OPEN) return;
-	ws.send(JSON.stringify({ type: "switch_session", sessionId: id }));
+	ws.send(JSON.stringify({ type: "switch_session", sessionId: id, requestId }));
 }
 
 function newSession() {
 	if (!ws || ws.readyState !== WebSocket.OPEN || creatingSession) return;
+	cancelSessionSwitchAnimation();
 	creatingSession = true;
 	setBusy(busy);
 	ws.send(JSON.stringify({ type: "new_session" }));
@@ -2701,13 +2777,17 @@ function renderCommandsInto(listEl, filter, onSelect) {
 
 function updateSlashCommands(targetInput, containerEl, listEl) {
 	const show = targetInput.value.startsWith("/");
-	const wasHidden = containerEl.classList.contains("hidden");
-	containerEl.classList.toggle("hidden", !show);
-	if (!show) return;
+	const wasHidden = !containerEl.classList.contains("is-open");
+	containerEl.classList.toggle("is-open", show);
+	containerEl.setAttribute("aria-hidden", String(!show));
+	if (!show) {
+		listEl.classList.remove("anim-fade-down");
+		return;
+	}
 
 	if (show && commands.length === 0) requestAgentDefaults();
 
-	if (wasHidden) animateEnter(containerEl, "anim-fade-down");
+	if (wasHidden) animateEnter(listEl, "anim-fade-down");
 
 	const query = targetInput.value.slice(1).split(/\s/)[0] ?? "";
 	renderCommandsInto(listEl, query, (command) => applyCommand(command, targetInput));
@@ -2731,8 +2811,10 @@ function openCommands(targetInput = getActiveInput()) {
 }
 
 function closeCommands() {
-	inlineCommandsEl.classList.add("hidden");
-	chatInlineCommandsEl.classList.add("hidden");
+	inlineCommandsEl.classList.remove("is-open");
+	inlineCommandsEl.setAttribute("aria-hidden", "true");
+	chatInlineCommandsEl.classList.remove("is-open");
+	chatInlineCommandsEl.setAttribute("aria-hidden", "true");
 	const target = getActiveInput();
 	if (target.value.startsWith("/") && !target.value.slice(1).includes(" ")) {
 		target.value = "";
@@ -2742,8 +2824,8 @@ function closeCommands() {
 
 function setCommands(nextCommands) {
 	commands = Array.isArray(nextCommands) ? nextCommands : [];
-	if (!inlineCommandsEl.classList.contains("hidden")) updateInlineCommands();
-	if (!chatInlineCommandsEl.classList.contains("hidden")) updateChatSlashCommands();
+	if (inlineCommandsEl.classList.contains("is-open")) updateInlineCommands();
+	if (chatInlineCommandsEl.classList.contains("is-open")) updateChatSlashCommands();
 }
 
 /* ── WebSocket ── */
@@ -2783,6 +2865,8 @@ function connect() {
 			return;
 		}
 
+		if (isStaleSwitchMessage(msg)) return;
+
 		switch (msg.type) {
 			case "sessions":
 				sessions = Array.isArray(msg.sessions) ? msg.sessions : [];
@@ -2813,12 +2897,13 @@ function connect() {
 				sessionId = msg.sessionId ?? null;
 				creatingSession = false;
 				if (sessionId) {
-					upsertSession({
+					const entry = {
 						sessionId,
 						title: msg.title ?? null,
 						cwd: msg.cwd ?? cwd,
-						updatedAt: msg.updatedAt ?? new Date().toISOString(),
-					});
+					};
+					if (msg.updatedAt) entry.updatedAt = msg.updatedAt;
+					upsertSession(entry);
 				}
 				if (awaitingNewAgentSession) {
 					awaitingNewAgentSession = false;
@@ -2833,10 +2918,12 @@ function connect() {
 				renderSessions();
 				setBusy(busy);
 				renderContextUsage();
+				finishSessionSwitchAnimation(msg.requestId);
 				break;
 
 			case "history":
 				applyHistoryBatch(msg.events);
+				finishSessionSwitchAnimation(msg.requestId);
 				break;
 
 			case "clear":
@@ -2872,6 +2959,7 @@ function connect() {
 					renderSessions();
 					scheduleAgentDefaultsFetch();
 					setTimeout(maybePromptForNotifications, 1000);
+					finishSessionSwitchAnimation(msg.requestId);
 				} else if (msg.state === "busy") {
 					setStatus("busy");
 					setBusy(true);
@@ -2890,6 +2978,7 @@ function connect() {
 						reopenProjectMenu();
 						pendingProjectPath = null;
 					}
+					cancelSessionSwitchAnimation();
 					setStatus("error", msg.message ?? "Error");
 				}
 				break;
@@ -2954,6 +3043,7 @@ function connect() {
 					reopenProjectMenu();
 					pendingProjectPath = null;
 				}
+				cancelSessionSwitchAnimation();
 				addSystemMessage("error", "Error", msg.message ?? "Unknown error");
 				contextCompactPending = false;
 				setBusy(false);
