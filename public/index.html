@@ -147,6 +147,44 @@
 							Try Commands <kbd>/</kbd>
 						</button>
 
+						<section class="contrib-graph" id="contrib-graph" aria-label="Contribution activity">
+							<div class="contrib-graph-header">
+								<span class="contrib-graph-count" id="contrib-graph-count"></span>
+							</div>
+							<div class="contrib-graph-body">
+								<div class="contrib-graph-months" id="contrib-graph-months" aria-hidden="true"></div>
+								<div class="contrib-graph-grid-wrap">
+									<div class="contrib-graph-days" aria-hidden="true">
+										<span></span>
+										<span>Mon</span>
+										<span></span>
+										<span>Wed</span>
+										<span></span>
+										<span>Fri</span>
+										<span></span>
+									</div>
+									<div class="contrib-graph-weeks" id="contrib-graph-weeks"></div>
+								</div>
+							</div>
+							<div class="contrib-graph-footer">
+								<button type="button" class="contrib-graph-learn" id="contrib-graph-learn">
+									Learn how we count contributions
+								</button>
+								<div class="contrib-graph-legend" aria-hidden="true">
+									<span>Less</span>
+									<span class="contrib-cell level-0"></span>
+									<span class="contrib-cell level-1"></span>
+									<span class="contrib-cell level-2"></span>
+									<span class="contrib-cell level-3"></span>
+									<span class="contrib-cell level-4"></span>
+									<span>More</span>
+								</div>
+							</div>
+							<p class="contrib-graph-note hidden" id="contrib-graph-note">
+								Each square is one day. We count user prompts sent to Pi in this project, read from your local session history on this machine — nothing is sent elsewhere.
+							</p>
+						</section>
+
 						<div class="activity-feed" id="activity-feed" aria-label="Recent activity"></div>
 					</div>
 				</div>
@@ -281,6 +319,27 @@
 				<h2 class="permission-title" id="permission-title">Allow tool?</h2>
 				<pre class="permission-details hidden" id="permission-details"></pre>
 				<div class="permission-actions" id="permission-actions"></div>
+			</div>
+		</div>
+
+		<div class="permission-modal hidden" id="notification-prompt-modal" aria-hidden="true">
+			<div class="permission-backdrop" id="notification-prompt-backdrop"></div>
+			<div
+				class="permission-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="notification-prompt-title"
+			>
+				<h2 class="permission-title" id="notification-prompt-title">Task notifications</h2>
+				<p class="notification-prompt-text">
+					Get a browser notification when Pi finishes a task? Useful when you switch tabs while it works.
+				</p>
+				<div class="permission-actions">
+					<button type="button" class="permission-btn" id="notification-prompt-dismiss">Not now</button>
+					<button type="button" class="permission-btn permission-btn--allow" id="notification-prompt-enable">
+						Enable notifications
+					</button>
+				</div>
 			</div>
 		</div>
 

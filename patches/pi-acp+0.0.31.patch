@@ -1,8 +1,82 @@
 diff --git a/node_modules/pi-acp/dist/index.js b/node_modules/pi-acp/dist/index.js
-index d67c4b8..ae7693c 100644
+index d67c4b8..cb95b8b 100644
 --- a/node_modules/pi-acp/dist/index.js
 +++ b/node_modules/pi-acp/dist/index.js
-@@ -1623,9 +1623,15 @@ function describeFallback(c) {
+@@ -832,6 +832,37 @@ var PiAcpSession = class {
+   async flushEmits() {
+     await this.lastEmit;
+   }
++  finishPendingTurn(reason) {
++    const turn = this.pendingTurn;
++    if (!turn) return;
++    this.pendingTurn = null;
++    this.inAgentLoop = false;
++    turn.resolve(reason);
++    const next = this.turnQueue.shift();
++    if (next) {
++      this.emit({
++        sessionUpdate: "agent_message_chunk",
++        content: { type: "text", text: `Starting queued message. (${this.turnQueue.length} remaining)` }
++      });
++      this.startTurn(next);
++    } else {
++      this.emit({
++        sessionUpdate: "session_info_update",
++        _meta: { piAcp: { queueDepth: 0, running: false } }
++      });
++    }
++  }
++  scheduleFinishTurnIfStillIdle() {
++    const turn = this.pendingTurn;
++    if (!turn) return;
++    setTimeout(() => {
++      if (this.pendingTurn !== turn || this.inAgentLoop) return;
++      void this.flushEmits().finally(() => {
++        if (this.pendingTurn !== turn || this.inAgentLoop) return;
++        this.finishPendingTurn(this.cancelRequested ? "cancelled" : "end_turn");
++      });
++    }, 75);
++  }
+   startTurn(t) {
+     this.cancelRequested = false;
+     this.inAgentLoop = false;
+@@ -840,7 +871,9 @@ var PiAcpSession = class {
+       sessionUpdate: "session_info_update",
+       _meta: { piAcp: { queueDepth: this.turnQueue.length, running: true } }
+     });
+-    this.proc.prompt(t.message, t.images).catch((err) => {
++    this.proc.prompt(t.message, t.images).then(() => {
++      this.scheduleFinishTurnIfStillIdle();
++    }).catch((err) => {
+       void this.flushEmits().finally(() => {
+         const authErr = maybeAuthRequiredError(err);
+         if (authErr) {
+@@ -1085,23 +1118,7 @@ var PiAcpSession = class {
+       }
+       case "agent_end": {
+         void this.flushEmits().finally(() => {
+-          const reason = this.cancelRequested ? "cancelled" : "end_turn";
+-          this.pendingTurn?.resolve(reason);
+-          this.pendingTurn = null;
+-          this.inAgentLoop = false;
+-          const next = this.turnQueue.shift();
+-          if (next) {
+-            this.emit({
+-              sessionUpdate: "agent_message_chunk",
+-              content: { type: "text", text: `Starting queued message. (${this.turnQueue.length} remaining)` }
+-            });
+-            this.startTurn(next);
+-          } else {
+-            this.emit({
+-              sessionUpdate: "session_info_update",
+-              _meta: { piAcp: { queueDepth: 0, running: false } }
+-            });
+-          }
++          this.finishPendingTurn(this.cancelRequested ? "cancelled" : "end_turn");
+         });
+         break;
+       }
+@@ -1623,9 +1640,15 @@ function describeFallback(c) {
    if (location) parts.push(location);
    return parts.length ? `(${parts.join(":")})` : "(command)";
  }
@@ -19,7 +93,7 @@ index d67c4b8..ae7693c 100644
    const root = data;
    const commandsRaw = Array.isArray(root?.commands) ? root.commands : Array.isArray(root?.data?.commands) ? root.data.commands : [];
    const out = [];
-@@ -1907,8 +1913,7 @@ var PiAcpAgent = class {
+@@ -1907,8 +1930,7 @@ var PiAcpAgent = class {
          try {
            const pi = await session.proc.getCommands();
            const { commands } = toAvailableCommandsFromPiGetCommands(pi, {
@@ -29,7 +103,7 @@ index d67c4b8..ae7693c 100644
            });
            await this.conn.sessionUpdate({
              sessionId: session.sessionId,
-@@ -2425,8 +2430,7 @@ ${JSON.stringify(stats, null, 2)}`;
+@@ -2425,8 +2447,7 @@ ${JSON.stringify(stats, null, 2)}`;
          try {
            const pi = await proc.getCommands();
            const { commands } = toAvailableCommandsFromPiGetCommands(pi, {

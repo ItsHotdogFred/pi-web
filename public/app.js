@@ -4,6 +4,11 @@ const $ = (id) => document.getElementById(id);
 
 const todayListEl = $("today-list");
 const activityFeedEl = $("activity-feed");
+const contribGraphCountEl = $("contrib-graph-count");
+const contribGraphWeeksEl = $("contrib-graph-weeks");
+const contribGraphMonthsEl = $("contrib-graph-months");
+const contribGraphLearnEl = $("contrib-graph-learn");
+const contribGraphNoteEl = $("contrib-graph-note");
 const dashboardViewEl = $("dashboard-view");
 const chatViewEl = $("chat-view");
 const messagesEl = $("messages");
@@ -35,6 +40,14 @@ const modelLabelEl = $("model-label");
 const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 const RECENT_PROJECTS_KEY = "pi-web-recent-projects";
 const ACTIVITY_ART_KEY = "pi-web-activity-art-style";
+const EDITOR_PREF_KEY = "pi-web-preferred-editor";
+const NOTIFICATIONS_PREF_KEY = "pi-web-notifications";
+
+const EDITOR_OPTIONS = [
+	{ id: "vscode", label: "VS Code" },
+	{ id: "cursor", label: "Cursor" },
+	{ id: "zed", label: "Zed" },
+];
 
 let ws = null;
 let busy = false;
@@ -95,6 +108,10 @@ const permissionDialogEl = $("permission-dialog");
 const permissionTitleEl = $("permission-title");
 const permissionDetailsEl = $("permission-details");
 const permissionActionsEl = $("permission-actions");
+
+const notificationPromptModalEl = $("notification-prompt-modal");
+const notificationPromptEnableEl = $("notification-prompt-enable");
+const notificationPromptDismissEl = $("notification-prompt-dismiss");
 
 let permissionQueue = [];
 let activePermissionRequest = null;
@@ -249,6 +266,95 @@ function initPermissionModal() {
 			first.focus();
 		}
 	});
+}
+
+function getNotificationPref() {
+	try {
+		return localStorage.getItem(NOTIFICATIONS_PREF_KEY);
+	} catch {
+		return null;
+	}
+}
+
+function setNotificationPref(value) {
+	try {
+		localStorage.setItem(NOTIFICATIONS_PREF_KEY, value);
+	} catch {
+		// ignore storage failures
+	}
+}
+
+function setNotificationPromptOpen(open) {
+	if (!notificationPromptModalEl) return;
+	notificationPromptModalEl.classList.toggle("hidden", !open);
+	notificationPromptModalEl.setAttribute("aria-hidden", String(!open));
+}
+
+function maybePromptForNotifications() {
+	if (!("Notification" in window)) return;
+	if (getNotificationPref() !== null) return;
+	setNotificationPromptOpen(true);
+	notificationPromptEnableEl?.focus();
+}
+
+async function enableTaskNotifications() {
+	setNotificationPromptOpen(false);
+	if (!("Notification" in window)) {
+		setNotificationPref("disabled");
+		return;
+	}
+	const result =
+		Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+	setNotificationPref(result === "granted" ? "enabled" : "disabled");
+}
+
+function dismissTaskNotifications() {
+	setNotificationPref("disabled");
+	setNotificationPromptOpen(false);
+}
+
+function requestAgentDefaults() {
+	if (defaultsRequested || !ws || ws.readyState !== WebSocket.OPEN) return;
+	defaultsRequested = true;
+	ws.send(JSON.stringify({ type: "fetch_defaults" }));
+}
+
+function scheduleAgentDefaultsFetch() {
+	if (defaultsRequested || models.length > 0) return;
+	const run = () => requestAgentDefaults();
+	if ("requestIdleCallback" in window) {
+		requestIdleCallback(run, { timeout: 5000 });
+	} else {
+		setTimeout(run, 2500);
+	}
+}
+
+function notifyTaskComplete() {
+	if (getNotificationPref() !== "enabled") return;
+	if (!("Notification" in window) || Notification.permission !== "granted") return;
+	if (!wasBusyForNotification) return;
+	if (!document.hidden && currentView === "chat") return;
+
+	const active = sessions.find((s) => s.sessionId === sessionId);
+	const title = active ? sessionTitle(active) : "Pi";
+	try {
+		new Notification("Pi finished", {
+			body: `${title} completed its task`,
+			icon: "/favicon.svg",
+		});
+	} catch {
+		// ignore notification failures
+	}
+}
+
+function initNotificationPrompt() {
+	if (!notificationPromptModalEl) return;
+
+	notificationPromptEnableEl?.addEventListener("click", () => {
+		void enableTaskNotifications();
+	});
+	notificationPromptDismissEl?.addEventListener("click", dismissTaskNotifications);
+	$("notification-prompt-backdrop")?.addEventListener("click", dismissTaskNotifications);
 }
 
 function formatTokenCount(value) {
@@ -444,6 +550,8 @@ let activityArtStyle = loadActivityArtStyle();
 let artStyleToastTimer = null;
 
 const changedFiles = new Set();
+const fileDiffs = new Map();
+let activePlanPanel = null;
 
 const LANG_TAGS = {
 	js: "JS",
@@ -496,6 +604,8 @@ let pendingDashboardPrompt = null;
 let loadingHistory = false;
 let batchHistoryMode = false;
 let pendingUserMessage = null;
+let defaultsRequested = false;
+let wasBusyForNotification = false;
 
 /* ── Utilities ── */
 
@@ -645,15 +755,19 @@ function formatRelativeTime(iso) {
 	return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function escapeHtml(text) {
+	return String(text)
+		.replaceAll("&", "&amp;")
+		.replaceAll("<", "&lt;")
+		.replaceAll(">", "&gt;")
+		.replaceAll('"', "&quot;");
+}
+
 function renderMarkdown(text) {
 	if (window.marked?.parse) {
 		return window.marked.parse(text, { breaks: true });
 	}
-	return text
-		.replaceAll("&", "&amp;")
-		.replaceAll("<", "&lt;")
-		.replaceAll(">", "&gt;")
-		.replaceAll("\n", "<br>");
+	return escapeHtml(text).replaceAll("\n", "<br>");
 }
 
 function formatRaw(value) {
@@ -813,6 +927,7 @@ function showView(view, { animate = true } = {}) {
 		dashboardViewEl.classList.toggle("hidden", view !== "dashboard");
 		chatViewEl.classList.toggle("hidden", view !== "chat");
 		if (view === "dashboard") renderActivityFeed();
+		if (view === "dashboard") void loadContributions();
 		renderContextUsage();
 		return;
 	}
@@ -835,6 +950,7 @@ function showView(view, { animate = true } = {}) {
 					toEl.classList.remove("view-entering");
 					viewTransitioning = false;
 					if (view === "dashboard") renderActivityFeed();
+					if (view === "dashboard") void loadContributions();
 				},
 				{ once: true },
 			);
@@ -874,6 +990,7 @@ function setProjectName(path) {
 	gitInfo.project = basename(path);
 	gitInfo.path = path || gitInfo.path;
 	syncGitContext();
+	void loadContributions();
 }
 
 function loadRecentProjects() {
@@ -992,6 +1109,7 @@ function resetForProjectSwitch(nextCwd) {
 }
 
 function setBusy(nextBusy) {
+	if (nextBusy) wasBusyForNotification = true;
 	busy = nextBusy;
 	const connected = ws && ws.readyState === WebSocket.OPEN;
 	const canSendDashboard = Boolean(inputEl.value.trim() || dashboardAttachments.length);
@@ -1152,6 +1270,8 @@ async function fetchGitInfo(projectPath = cwd) {
 function openModelDropdown(scope = "dashboard") {
 	const config = MODEL_SCOPES[scope];
 	if (!config) return;
+
+	if (models.length === 0) requestAgentDefaults();
 
 	const menu = $(config.menuId);
 	const dropdown = $(config.dropdownId);
@@ -1417,6 +1537,144 @@ function renderActivityFeed() {
 	animateActivityFeed = false;
 }
 
+/* ── Contribution graph ── */
+
+const CONTRIB_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+let contributionsLoading = false;
+let contributionsRequestId = 0;
+
+function contributionLevel(count) {
+	if (count <= 0) return 0;
+	if (count === 1) return 1;
+	if (count <= 3) return 2;
+	if (count <= 6) return 3;
+	return 4;
+}
+
+function formatContributionTooltip(dateKey, count) {
+	const date = new Date(`${dateKey}T12:00:00Z`);
+	const label = date.toLocaleDateString(undefined, {
+		weekday: "short",
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
+	const noun = count === 1 ? "contribution" : "contributions";
+	return count > 0 ? `${count} ${noun} on ${label}` : `No contributions on ${label}`;
+}
+
+function buildHeatmapWeeks(dayData, rangeStart, rangeEnd) {
+	const start = new Date(`${rangeStart}T00:00:00Z`);
+	const end = new Date(`${rangeEnd}T00:00:00Z`);
+	const gridStart = new Date(start);
+	gridStart.setUTCDate(gridStart.getUTCDate() - gridStart.getUTCDay());
+
+	const weeks = [];
+	const cursor = new Date(gridStart);
+
+	while (true) {
+		const week = [];
+		for (let day = 0; day < 7; day += 1) {
+			const key = cursor.toISOString().slice(0, 10);
+			const inRange = cursor >= start && cursor <= end;
+			week.push({
+				date: key,
+				count: inRange ? (dayData[key] ?? 0) : 0,
+				inRange,
+				future: cursor > end,
+			});
+			cursor.setUTCDate(cursor.getUTCDate() + 1);
+		}
+		weeks.push(week);
+		if (cursor > end) break;
+	}
+
+	return weeks;
+}
+
+function renderContributionGraph(payload) {
+	if (!contribGraphWeeksEl || !contribGraphCountEl) return;
+
+	const dayData = payload?.days && typeof payload.days === "object" ? payload.days : {};
+	const total = typeof payload?.total === "number" ? payload.total : 0;
+	const rangeStart = payload?.start ?? Object.keys(dayData).sort()[0];
+	const rangeEnd = payload?.end ?? Object.keys(dayData).sort().at(-1);
+
+	if (!rangeStart || !rangeEnd) {
+		contribGraphCountEl.textContent = "No contribution data yet";
+		contribGraphWeeksEl.replaceChildren();
+		if (contribGraphMonthsEl) contribGraphMonthsEl.replaceChildren();
+		return;
+	}
+
+	contribGraphCountEl.innerHTML = `<strong>${total.toLocaleString()}</strong> contribution${total === 1 ? "" : "s"} in the last year`;
+
+	const weeks = buildHeatmapWeeks(dayData, rangeStart, rangeEnd);
+	contribGraphWeeksEl.replaceChildren();
+
+	if (contribGraphMonthsEl) {
+		contribGraphMonthsEl.replaceChildren();
+		let lastMonth = -1;
+		for (const week of weeks) {
+			const monthEl = document.createElement("span");
+			monthEl.className = "contrib-graph-month";
+			monthEl.style.width = "14px";
+			const firstInRange = week.find((day) => day.inRange);
+			if (firstInRange) {
+				const month = new Date(`${firstInRange.date}T12:00:00Z`).getUTCMonth();
+				if (month !== lastMonth) {
+					monthEl.textContent = CONTRIB_MONTHS[month];
+					lastMonth = month;
+				}
+			}
+			contribGraphMonthsEl.appendChild(monthEl);
+		}
+	}
+
+	for (const week of weeks) {
+		const weekEl = document.createElement("div");
+		weekEl.className = "contrib-graph-week";
+
+		for (const day of week) {
+			const cell = document.createElement("span");
+			cell.className = "contrib-cell";
+			if (!day.inRange || day.future) {
+				cell.classList.add("is-future");
+			} else {
+				cell.classList.add(`level-${contributionLevel(day.count)}`);
+				cell.title = formatContributionTooltip(day.date, day.count);
+			}
+			weekEl.appendChild(cell);
+		}
+
+		contribGraphWeeksEl.appendChild(weekEl);
+	}
+}
+
+async function loadContributions({ refresh = false } = {}) {
+	if (!contribGraphWeeksEl || contributionsLoading) return;
+
+	const requestId = ++contributionsRequestId;
+	contributionsLoading = true;
+
+	try {
+		const params = new URLSearchParams();
+		if (cwd) params.set("cwd", cwd);
+		if (refresh) params.set("refresh", "1");
+		const query = params.toString();
+		const response = await fetch(`/api/contributions${query ? `?${query}` : ""}`);
+		if (!response.ok) throw new Error("Failed to load contributions");
+		const payload = await response.json();
+		if (requestId !== contributionsRequestId) return;
+		renderContributionGraph(payload);
+	} catch {
+		if (requestId !== contributionsRequestId) return;
+		if (contribGraphCountEl) contribGraphCountEl.textContent = "Could not load contribution activity";
+	} finally {
+		if (requestId === contributionsRequestId) contributionsLoading = false;
+	}
+}
+
 function renderSessions() {
 	renderTodayList();
 	renderActivityFeed();
@@ -1460,6 +1718,7 @@ function newSession() {
 
 function clearChangedFiles() {
 	changedFiles.clear();
+	fileDiffs.clear();
 	renderFileContext();
 }
 
@@ -1470,7 +1729,16 @@ function fileLangTag(path) {
 
 function parseToolPayload(raw) {
 	if (raw == null) return null;
-	if (typeof raw === "object") return raw;
+	if (typeof raw === "object") {
+		if (raw.truncated && typeof raw.preview === "string") {
+			try {
+				return JSON.parse(raw.preview);
+			} catch {
+				return null;
+			}
+		}
+		return raw;
+	}
 	try {
 		return JSON.parse(raw);
 	} catch {
@@ -1478,9 +1746,319 @@ function parseToolPayload(raw) {
 	}
 }
 
+function buildEditDiffFromInput(input) {
+	const path = extractFilePath(input) ?? "file";
+
+	if (Array.isArray(input.edits) && input.edits.length) {
+		const lines = [`--- a/${path}`, `+++ b/${path}`];
+		for (const edit of input.edits) {
+			const oldText = String(edit.oldText ?? edit.old_string ?? "");
+			const newText = String(edit.newText ?? edit.new_string ?? "");
+			if (oldText) {
+				for (const line of oldText.split("\n")) lines.push(`-${line}`);
+			}
+			if (newText) {
+				for (const line of newText.split("\n")) lines.push(`+${line}`);
+			}
+		}
+		return lines.length > 2 ? lines.join("\n") : null;
+	}
+
+	const oldText = input.oldText ?? input.old_string;
+	const newText = input.newText ?? input.new_string;
+	if (oldText != null || newText != null) {
+		return buildSyntheticDiff({
+			path,
+			old_string: oldText ?? "",
+			new_string: newText ?? "",
+		});
+	}
+
+	return null;
+}
+
 function extractFilePath(payload) {
 	if (!payload || typeof payload !== "object") return null;
 	return payload.path || payload.file_path || payload.filePath || payload.file || payload.target || null;
+}
+
+function resolveAbsolutePath(path) {
+	if (!path) return "";
+	const normalized = String(path).replace(/\\/g, "/");
+	if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith("/")) return normalized;
+	const base = (cwd || gitInfo.path || "").replace(/\\/g, "/").replace(/\/$/, "");
+	if (!base) return normalized.replace(/^\.\//, "");
+	return `${base}/${normalized.replace(/^\.\//, "")}`;
+}
+
+function getPreferredEditor() {
+	try {
+		const stored = localStorage.getItem(EDITOR_PREF_KEY);
+		if (stored && EDITOR_OPTIONS.some((option) => option.id === stored)) return stored;
+	} catch {
+		/* ignore */
+	}
+	return "cursor";
+}
+
+function setPreferredEditor(editorId) {
+	try {
+		localStorage.setItem(EDITOR_PREF_KEY, editorId);
+	} catch {
+		/* ignore */
+	}
+	renderFileContext();
+}
+
+function buildEditorUrl(editorId, filePath, line = 1) {
+	const abs = resolveAbsolutePath(filePath);
+	const path = abs.replace(/\\/g, "/");
+	const loc = line > 1 ? `:${line}` : "";
+	switch (editorId) {
+		case "cursor":
+			return `cursor://file/${path}${loc}`;
+		case "zed":
+			return `zed://file/${path}${loc}`;
+		default:
+			return `vscode://file/${path}${loc}`;
+	}
+}
+
+function openInEditor(filePath, line = 1) {
+	const url = buildEditorUrl(getPreferredEditor(), filePath, line);
+	window.location.href = url;
+}
+
+function looksLikeUnifiedDiff(text) {
+	if (!text || typeof text !== "string") return false;
+	const trimmed = text.trim();
+	return /^(\-\-\-|\+\+\+|@@)/m.test(trimmed);
+}
+
+function extractDiffFromTool(state) {
+	const toolName = resolveToolName(state)?.toLowerCase() ?? "";
+	const parsed = parseRawObject(state.rawOutput);
+	if (parsed?.details?.diff && typeof parsed.details.diff === "string") return parsed.details.diff;
+	if (parsed?.diff && typeof parsed.diff === "string") return parsed.diff;
+
+	if (typeof state.rawOutput === "string" && looksLikeUnifiedDiff(state.rawOutput)) {
+		return state.rawOutput;
+	}
+
+	const formatted = formatRaw(state.rawOutput);
+	if (looksLikeUnifiedDiff(formatted)) return formatted;
+
+	const input = parseToolPayload(state.rawInput);
+	if (input) {
+		const editDiff = buildEditDiffFromInput(input);
+		if (editDiff) return editDiff;
+
+		const writeContent = input.content ?? input.text;
+		if ((toolName === "write" || toolName === "create") && writeContent != null) {
+			return buildWriteDiff({ ...input, content: writeContent });
+		}
+	}
+
+	return null;
+}
+
+function buildWriteDiff(input) {
+	const path = extractFilePath(input) ?? "file";
+	const content = String(input.content ?? "");
+	if (!content.trim()) return null;
+	const contentLines = content.split("\n");
+	const lines = [`--- /dev/null`, `+++ b/${path}`, `@@ -0,0 +1,${contentLines.length} @@`];
+	for (const line of contentLines) {
+		lines.push(`+${line}`);
+	}
+	return lines.join("\n");
+}
+
+function buildSyntheticDiff(input) {
+	const path = extractFilePath(input) ?? "file";
+	const oldText = String(input.old_string ?? "");
+	const newText = String(input.new_string ?? input.content ?? "");
+	const oldLines = oldText.split("\n");
+	const newLines = newText.split("\n");
+	const lines = [`--- a/${path}`, `+++ b/${path}`];
+	const max = Math.max(oldLines.length, newLines.length);
+	for (let i = 0; i < max; i++) {
+		const oldLine = oldLines[i];
+		const newLine = newLines[i];
+		if (oldLine === newLine) {
+			if (oldLine !== undefined) lines.push(` ${oldLine}`);
+		} else {
+			if (oldLine !== undefined) lines.push(`-${oldLine}`);
+			if (newLine !== undefined) lines.push(`+${newLine}`);
+		}
+	}
+	return lines.join("\n");
+}
+
+function isDiffToolName(name) {
+	return /^(edit|write|patch|replace|create)$/.test(String(name ?? "").toLowerCase());
+}
+
+function renderDiffView(diffText) {
+	const lines = String(diffText).split("\n");
+	let html = '<div class="diff-view" tabindex="0">';
+	for (const line of lines) {
+		let cls = "diff-line";
+		if (line.startsWith("---") || line.startsWith("+++")) cls += " diff-line-meta";
+		else if (line.startsWith("@@")) cls += " diff-line-hunk";
+		else if (line.startsWith("+")) cls += " diff-line-add";
+		else if (line.startsWith("-")) cls += " diff-line-del";
+		else cls += " diff-line-ctx";
+
+		const gutter = line.length ? line[0] : " ";
+		const body = line.length > 1 ? line.slice(1) : line === "+" || line === "-" ? "" : line;
+		html += `<div class="${cls}"><span class="diff-gutter">${escapeHtml(gutter)}</span><code>${escapeHtml(body)}</code></div>`;
+	}
+	html += "</div>";
+	return html;
+}
+
+function syncToolDiffSection(card, diff, filePath) {
+	let section = card.querySelector(".tool-diff-section");
+	const outputSection = card.querySelector(".tool-output-section");
+	const inputSection = card.querySelector(".tool-input-section");
+
+	if (!diff) {
+		section?.remove();
+		delete card.dataset.diffPath;
+		if (outputSection) outputSection.style.display = "";
+		if (inputSection) inputSection.style.display = "";
+		return;
+	}
+
+	if (!section) {
+		section = document.createElement("div");
+		section.className = "tool-section tool-diff-section";
+		section.innerHTML = `<div class="tool-section-label">Diff</div><div class="tool-diff"></div>`;
+		const body = card.querySelector(".tool-body");
+		const output = card.querySelector(".tool-output-section");
+		if (output) body.insertBefore(section, output);
+		else body.appendChild(section);
+	}
+
+	section.style.display = "";
+	section.querySelector(".tool-diff").innerHTML = renderDiffView(diff);
+	if (filePath) card.dataset.diffPath = resolveAbsolutePath(filePath);
+	else delete card.dataset.diffPath;
+
+	if (inputSection) inputSection.style.display = "none";
+	if (outputSection) {
+		const outputText = card.querySelector(".tool-output")?.textContent?.trim();
+		outputSection.style.display = outputText ? "" : "none";
+	}
+
+	if (!card.classList.contains("expanded")) {
+		card.classList.add("expanded");
+		card.querySelector(".tool-header")?.setAttribute("aria-expanded", "true");
+	}
+}
+
+function scrollToToolDiff(filePath) {
+	const abs = resolveAbsolutePath(filePath);
+	const cards = messagesEl.querySelectorAll("[data-diff-path]");
+	for (const card of cards) {
+		if (card.dataset.diffPath === abs) {
+			card.classList.add("expanded");
+			card.querySelector(".tool-header")?.setAttribute("aria-expanded", "true");
+			card.scrollIntoView({ behavior: "smooth", block: "center" });
+			return;
+		}
+	}
+}
+
+function resetPlanPanel() {
+	activePlanPanel = null;
+}
+
+function normalizePlanEntry(entry) {
+	if (typeof entry === "string") {
+		return { content: entry, priority: "medium", status: "pending" };
+	}
+	return {
+		content: entry?.content ?? entry?.description ?? entry?.text ?? "Task",
+		priority: entry?.priority ?? "medium",
+		status: entry?.status ?? "pending",
+	};
+}
+
+function planStatusIcon(status) {
+	switch (status) {
+		case "completed":
+			return "✓";
+		case "in_progress":
+			return "◌";
+		default:
+			return "○";
+	}
+}
+
+function renderPlanPanel(entries) {
+	const normalized = (Array.isArray(entries) ? entries : []).map(normalizePlanEntry);
+	if (!normalized.length) return null;
+
+	let panel = activePlanPanel;
+	if (!panel?.isConnected) {
+		panel = document.createElement("article");
+		panel.className = "msg msg-plan plan-panel";
+		panel.innerHTML = `<span class="msg-label">Plan</span><ol class="plan-list"></ol>`;
+		appendChatNode(panel);
+		if (!batchHistoryMode) animateEnter(panel, "anim-fade-up");
+		activePlanPanel = panel;
+	}
+
+	const list = panel.querySelector(".plan-list");
+	list.replaceChildren();
+	for (const entry of normalized) {
+		const li = document.createElement("li");
+		li.className = `plan-item plan-item--${entry.status} plan-item--priority-${entry.priority}`;
+		const priorityHtml =
+			entry.priority !== "medium"
+				? `<span class="plan-priority plan-priority--${entry.priority}">${entry.priority}</span>`
+				: "";
+		li.innerHTML = `
+			<span class="plan-status" aria-hidden="true">${planStatusIcon(entry.status)}</span>
+			<span class="plan-text">${escapeHtml(entry.content)}</span>
+			${priorityHtml}`;
+		list.appendChild(li);
+	}
+	scrollToBottom();
+	return panel;
+}
+
+function renderFileContextEditorPicker() {
+	let picker = fileContextEl?.querySelector(".file-context-editor-picker");
+	if (!picker && fileContextEl) {
+		const header = fileContextEl.querySelector(".file-context-header");
+		if (!header) return;
+		picker = document.createElement("div");
+		picker.className = "file-context-editor-picker";
+		picker.setAttribute("role", "group");
+		picker.setAttribute("aria-label", "Open files in");
+		picker.addEventListener("click", (event) => event.stopPropagation());
+		header.appendChild(picker);
+	}
+
+	if (!picker) return;
+
+	const preferred = getPreferredEditor();
+	picker.replaceChildren();
+	for (const option of EDITOR_OPTIONS) {
+		const btn = document.createElement("button");
+		btn.type = "button";
+		btn.className = `file-context-editor-btn${option.id === preferred ? " active" : ""}`;
+		btn.textContent = option.label;
+		btn.title = `Open files in ${option.label}`;
+		btn.addEventListener("click", (event) => {
+			event.stopPropagation();
+			setPreferredEditor(option.id);
+		});
+		picker.appendChild(btn);
+	}
 }
 
 function trackFileFromTool(state) {
@@ -1492,6 +2070,10 @@ function trackFileFromTool(state) {
 	if (!path) return;
 
 	changedFiles.add(path);
+
+	const diff = extractDiffFromTool(state);
+	if (diff) fileDiffs.set(path, diff);
+
 	renderFileContext();
 }
 
@@ -1512,16 +2094,45 @@ function renderFileContext() {
 	fileContextEl.classList.toggle("collapsed", fileContextCollapsed);
 	$("file-context-toggle")?.setAttribute("aria-expanded", String(!fileContextCollapsed));
 	countEl.textContent = `${files.length} File${files.length === 1 ? "" : "s"} Touched`;
+	renderFileContextEditorPicker();
 
 	listEl.replaceChildren();
 	for (const path of files) {
 		const li = document.createElement("li");
 		li.className = "file-context-item";
-		li.innerHTML = `
-			<span class="file-context-file">
-				<span class="file-context-lang">${fileLangTag(path)}</span>
-				<span class="file-context-name" title="${path}">${basename(path)}</span>
-			</span>`;
+		const hasDiff = fileDiffs.has(path);
+
+		const fileBtn = document.createElement("button");
+		fileBtn.type = "button";
+		fileBtn.className = "file-context-file";
+		fileBtn.title = resolveAbsolutePath(path);
+		fileBtn.innerHTML = `
+			<span class="file-context-lang">${fileLangTag(path)}</span>
+			<span class="file-context-name">${escapeHtml(basename(path))}</span>`;
+		fileBtn.addEventListener("click", () => openInEditor(path));
+
+		const actions = document.createElement("div");
+		actions.className = "file-context-actions";
+
+		const openBtn = document.createElement("button");
+		openBtn.type = "button";
+		openBtn.className = "file-context-action";
+		openBtn.textContent = "Open";
+		openBtn.title = `Open in ${EDITOR_OPTIONS.find((o) => o.id === getPreferredEditor())?.label ?? "editor"}`;
+		openBtn.addEventListener("click", () => openInEditor(path));
+
+		actions.appendChild(openBtn);
+
+		if (hasDiff) {
+			const diffBtn = document.createElement("button");
+			diffBtn.type = "button";
+			diffBtn.className = "file-context-action file-context-action--diff";
+			diffBtn.textContent = "Diff";
+			diffBtn.addEventListener("click", () => scrollToToolDiff(path));
+			actions.appendChild(diffBtn);
+		}
+
+		li.append(fileBtn, actions);
 		listEl.appendChild(li);
 	}
 }
@@ -1559,6 +2170,7 @@ function reorderTurnEvents(events) {
 function applyHistoryEvent(event) {
 	switch (event.type) {
 		case "user_chunk":
+			resetPlanPanel();
 			appendUserChunk(event);
 			break;
 		case "chunk": {
@@ -1589,11 +2201,7 @@ function applyHistoryEvent(event) {
 		case "plan":
 			flushUserMessage();
 			finalizeAssistantTurn();
-			addSystemMessage(
-				"system",
-				"Plan",
-				renderMarkdown("\`\`\`json\n" + JSON.stringify(event.entries ?? [], null, 2) + "\n\`\`\`"),
-			);
+			renderPlanPanel(event.entries);
 			break;
 	}
 }
@@ -1616,11 +2224,13 @@ function clearChat() {
 	toolCards.clear();
 	clearPendingUserMessage();
 	finalizeAssistantTurn();
+	resetPlanPanel();
 	clearChangedFiles();
 	resetContextUsage();
 }
 
 function addUserMessage(text, images = []) {
+	resetPlanPanel();
 	const article = document.createElement("article");
 	article.className = "msg msg-user";
 	const imagesHtml = images.length
@@ -1639,7 +2249,8 @@ function addUserMessage(text, images = []) {
 }
 
 function streamingMessageAnchor() {
-	return assistantBlock || thoughtBlock;
+	// Only anchor before streaming assistant text — not thinking blocks.
+	return assistantBlock;
 }
 
 function appendChatNode(node, { beforeStreaming = false } = {}) {
@@ -1698,6 +2309,271 @@ function finalizeAssistantTurn() {
 	assistantText = "";
 }
 
+function parseRawObject(value) {
+	if (value == null || value === "") return null;
+	if (typeof value === "object") {
+		if (value.truncated) return null;
+		return value;
+	}
+	if (typeof value === "string") {
+		try {
+			return JSON.parse(value);
+		} catch {
+			return null;
+		}
+	}
+	return null;
+}
+
+function isSubagentTool(state) {
+	return resolveToolName(state).toLowerCase() === "subagent";
+}
+
+function parseSubagentDetails(rawOutput) {
+	const obj = parseRawObject(rawOutput);
+	if (!obj) return null;
+	if (obj.details && Array.isArray(obj.details.results)) return obj.details;
+	if (Array.isArray(obj.results) && obj.mode) return obj;
+	return null;
+}
+
+function subagentFinalOutput(result) {
+	if (result?.finalOutput) return result.finalOutput;
+	const messages = Array.isArray(result?.messages) ? result.messages : [];
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message?.role !== "assistant" || !Array.isArray(message.content)) continue;
+		for (const part of message.content) {
+			if (part?.type === "text" && part.text) return part.text;
+		}
+	}
+	return "";
+}
+
+function subagentDisplayItems(messages) {
+	const items = [];
+	for (const message of messages ?? []) {
+		if (message?.role !== "assistant" || !Array.isArray(message.content)) continue;
+		for (const part of message.content) {
+			if (part?.type === "text" && part.text) items.push({ type: "text", text: part.text });
+			else if (part?.type === "toolCall") {
+				items.push({ type: "toolCall", name: part.name ?? "tool", args: part.arguments ?? {} });
+			}
+		}
+	}
+	return items;
+}
+
+function formatSubagentToolCall(name, args) {
+	const toolName = normalizeToolName(name) || name || "tool";
+	if (toolName === "read" || toolName === "write" || toolName === "edit") {
+		const path = args?.path ?? args?.file ?? "";
+		return `${toolName} ${path}`;
+	}
+	if (toolName === "grep") {
+		return `grep /${args?.pattern ?? ""}/ in ${args?.path ?? "."}`;
+	}
+	if (toolName === "shell" || toolName === "bash") {
+		const command = String(args?.command ?? "").trim();
+		return command.length > 72 ? `shell ${command.slice(0, 72)}…` : `shell ${command}`;
+	}
+	const preview = JSON.stringify(args ?? {});
+	return preview.length > 72 ? `${toolName} ${preview.slice(0, 72)}…` : `${toolName} ${preview}`;
+}
+
+function subagentResultStatus(result, toolRunning) {
+	if (result.exitCode === -1) return "running";
+	if (toolRunning && result.exitCode === 0 && !subagentFinalOutput(result) && !result.errorMessage) {
+		return "running";
+	}
+	if (result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted") {
+		return "failed";
+	}
+	return "completed";
+}
+
+function subagentHeaderLabel(details, rawInput) {
+	if (!details) {
+		const input = parseRawObject(rawInput);
+		if (Array.isArray(input?.chain) && input.chain.length) return `subagent · chain (${input.chain.length})`;
+		if (Array.isArray(input?.tasks) && input.tasks.length) {
+			return `subagent · parallel (${input.tasks.length})`;
+		}
+		if (input?.agent) return `subagent · ${input.agent}`;
+		return "subagent";
+	}
+
+	if (details.mode === "chain") return `subagent · chain (${details.results.length})`;
+	if (details.mode === "parallel") {
+		const running = details.results.filter((result) => result.exitCode === -1).length;
+		if (running) {
+			const done = details.results.length - running;
+			return `subagent · parallel · ${done}/${details.results.length}`;
+		}
+		return `subagent · parallel (${details.results.length})`;
+	}
+	if (details.results.length === 1) return `subagent · ${details.results[0].agent}`;
+	return "subagent";
+}
+
+function subagentStatusLabel(details, toolRunning) {
+	if (!details) return toolRunning ? "running" : "done";
+	const results = [...details.results];
+	if (details.aggregator) results.push(details.aggregator);
+	const running = results.filter((result) => subagentResultStatus(result, toolRunning) === "running").length;
+	if (running) return `${results.length - running}/${results.length}`;
+	const failed = results.filter((result) => subagentResultStatus(result, false) === "failed").length;
+	if (failed) return `${failed} failed`;
+	return "done";
+}
+
+function truncateText(text, max = 220) {
+	if (!text) return "";
+	const trimmed = text.trim();
+	if (trimmed.length <= max) return trimmed;
+	return `${trimmed.slice(0, max)}…`;
+}
+
+function renderSubagentNestedItems(items, expanded) {
+	const limit = expanded ? items.length : 5;
+	const slice = items.slice(-limit);
+	const skipped = items.length - slice.length;
+	let html = "";
+	if (skipped > 0) {
+		html += `<div class="subagent-nested-meta">${skipped} earlier step${skipped === 1 ? "" : "s"}</div>`;
+	}
+	for (const item of slice) {
+		if (item.type === "text") {
+			html += `<div class="subagent-nested-text">${renderMarkdown(truncateText(item.text, expanded ? 1200 : 240))}</div>`;
+		} else {
+			html += `<div class="subagent-nested-tool">→ ${formatSubagentToolCall(item.name, item.args)}</div>`;
+		}
+	}
+	return html;
+}
+
+function renderSubagentResult(result, toolRunning, expanded) {
+	const status = subagentResultStatus(result, toolRunning);
+	const items = subagentDisplayItems(result.messages);
+	const output = subagentFinalOutput(result);
+	const icon = status === "running" ? "◌" : status === "failed" ? "✗" : "✓";
+	const source = result.agentSource ? ` (${result.agentSource})` : "";
+	const step =
+		typeof result.step === "number" ? `<span class="subagent-item-step">step ${result.step + 1}</span>` : "";
+
+	let body = `<div class="subagent-item-task">${truncateText(result.task, expanded ? 600 : 180)}</div>`;
+	if (result.errorMessage) {
+		body += `<div class="subagent-item-error">${result.errorMessage}</div>`;
+	} else if (items.length) {
+		body += `<div class="subagent-item-activity">${renderSubagentNestedItems(items, expanded)}</div>`;
+	} else if (status === "running") {
+		body += `<div class="subagent-item-meta">Running…</div>`;
+	}
+
+	if (output && status !== "running") {
+		body += `<div class="subagent-item-output">${renderMarkdown(truncateText(output, expanded ? 4000 : 320))}</div>`;
+	} else if (!items.length && !result.errorMessage && status !== "running") {
+		body += `<div class="subagent-item-meta">No output</div>`;
+	}
+
+	return `<article class="subagent-item subagent-item--${status}">
+		<div class="subagent-item-header">
+			<span class="subagent-item-icon" aria-hidden="true">${icon}</span>
+			<span class="subagent-item-name">${result.agent}${source}</span>
+			${step}
+			<span class="subagent-item-status">${status}</span>
+		</div>
+		${body}
+	</article>`;
+}
+
+function renderSubagentPanel(state) {
+	const card = state.el;
+	const details = parseSubagentDetails(state.rawOutput);
+	const input = parseRawObject(state.rawInput);
+	const toolRunning = ["running", "in_progress", "pending"].includes(normalizeStatus(state.status));
+	const expanded = card.classList.contains("expanded");
+	let html = `<div class="subagent-panel">`;
+
+	if (details) {
+		const scope = details.agentScope ? `<span class="subagent-chip">${details.agentScope}</span>` : "";
+		html += `<div class="subagent-summary">${scope}<span class="subagent-mode">${details.mode}</span></div>`;
+		html += `<div class="subagent-list">`;
+		for (const result of details.results) {
+			html += renderSubagentResult(result, toolRunning, expanded);
+		}
+		if (details.aggregator) {
+			html += `<div class="subagent-fanin-label">Fan-in</div>`;
+			html += renderSubagentResult(details.aggregator, toolRunning, expanded);
+		}
+		html += `</div>`;
+	} else if (input) {
+		html += `<div class="subagent-list">`;
+		if (Array.isArray(input.chain)) {
+			for (const step of input.chain) {
+				html += renderSubagentResult(
+					{ agent: step.agent, agentSource: "pending", task: step.task, exitCode: -1, messages: [] },
+					true,
+					expanded,
+				);
+			}
+		} else if (Array.isArray(input.tasks)) {
+			for (const task of input.tasks) {
+				html += renderSubagentResult(
+					{ agent: task.agent, agentSource: "pending", task: task.task, exitCode: -1, messages: [] },
+					true,
+					expanded,
+				);
+			}
+		} else if (input.agent && input.task) {
+			html += renderSubagentResult(
+				{ agent: input.agent, agentSource: "pending", task: input.task, exitCode: -1, messages: [] },
+				true,
+				expanded,
+			);
+		}
+		html += `</div>`;
+	} else {
+		const fallback = formatRaw(state.rawOutput) || formatRaw(state.rawInput);
+		html += fallback
+			? `<pre class="subagent-fallback">${fallback}</pre>`
+			: `<div class="subagent-item-meta">Waiting for subagent updates…</div>`;
+	}
+
+	html += `</div>`;
+
+	let panel = card.querySelector(".subagent-panel");
+	const body = card.querySelector(".tool-body");
+	if (!panel) {
+		body.querySelector(".tool-input-section")?.remove();
+		body.querySelector(".tool-output-section")?.remove();
+		body.insertAdjacentHTML("afterbegin", html);
+	} else {
+		panel.outerHTML = html;
+	}
+}
+
+function syncSubagentToolCard(state) {
+	const card = state.el;
+	const details = parseSubagentDetails(state.rawOutput);
+	const toolRunning = ["running", "in_progress", "pending"].includes(normalizeStatus(state.status));
+
+	card.classList.add("tool-card--subagent");
+	card.querySelector(".tool-name").textContent = subagentHeaderLabel(details, state.rawInput);
+
+	const statusBadge = card.querySelector(".tool-status");
+	const subagentStatus = subagentStatusLabel(details, toolRunning);
+	statusBadge.className = `tool-status tool-status-${toolRunning ? "running" : normalizeStatus(state.status)}`;
+	statusBadge.textContent = subagentStatus;
+
+	renderSubagentPanel(state);
+
+	if (toolRunning) {
+		card.classList.add("expanded");
+		card.querySelector(".tool-header")?.setAttribute("aria-expanded", "true");
+	}
+}
+
 function createToolCard(id) {
 	const card = document.createElement("article");
 	card.className = "tool-card";
@@ -1716,6 +2592,8 @@ function createToolCard(id) {
 	card.querySelector(".tool-header").addEventListener("click", () => {
 		const expanded = card.classList.toggle("expanded");
 		card.querySelector(".tool-header").setAttribute("aria-expanded", String(expanded));
+		const state = toolCards.get(id);
+		if (state && isSubagentTool(state)) renderSubagentPanel(state);
 	});
 
 	appendChatNode(card, { beforeStreaming: !batchHistoryMode });
@@ -1741,6 +2619,15 @@ function updateToolCard(msg) {
 	if (msg.status != null) state.status = msg.status;
 
 	const card = state.el;
+
+	if (isSubagentTool(state)) {
+		syncSubagentToolCard(state);
+		trackFileFromTool(state);
+		scrollToBottom();
+		return;
+	}
+
+	card.classList.remove("tool-card--subagent");
 	card.querySelector(".tool-name").textContent = resolveToolName(state);
 
 	const statusBadge = card.querySelector(".tool-status");
@@ -1750,6 +2637,7 @@ function updateToolCard(msg) {
 
 	for (const [key, prop] of [["tool-input", state.rawInput], ["tool-output", state.rawOutput]]) {
 		const pre = card.querySelector(`.${key}`);
+		if (!pre) continue;
 		const section = pre.closest(".tool-section");
 		const text = formatRaw(prop);
 		if (text) {
@@ -1759,6 +2647,12 @@ function updateToolCard(msg) {
 			section.style.display = "none";
 		}
 	}
+
+	const toolName = resolveToolName(state).toLowerCase();
+	const payload = parseToolPayload(state.rawInput);
+	const filePath = extractFilePath(payload);
+	const diff = isDiffToolName(toolName) ? extractDiffFromTool(state) : null;
+	syncToolDiffSection(card, diff, filePath);
 
 	trackFileFromTool(state);
 	scrollToBottom();
@@ -1811,6 +2705,8 @@ function updateSlashCommands(targetInput, containerEl, listEl) {
 	containerEl.classList.toggle("hidden", !show);
 	if (!show) return;
 
+	if (show && commands.length === 0) requestAgentDefaults();
+
 	if (wasHidden) animateEnter(containerEl, "anim-fade-down");
 
 	const query = targetInput.value.slice(1).split(/\s/)[0] ?? "";
@@ -1862,6 +2758,8 @@ function connect() {
 	pendingDashboardPrompt = null;
 	loadingHistory = false;
 	clearPendingUserMessage();
+	defaultsRequested = false;
+	wasBusyForNotification = false;
 	setStatus("connecting");
 	ws = new WebSocket(wsUrl);
 
@@ -1972,6 +2870,8 @@ function connect() {
 					sessionId = msg.sessionId ?? null;
 					if (cwd) rememberProject(cwd);
 					renderSessions();
+					scheduleAgentDefaultsFetch();
+					setTimeout(maybePromptForNotifications, 1000);
 				} else if (msg.state === "busy") {
 					setStatus("busy");
 					setBusy(true);
@@ -2034,7 +2934,7 @@ function connect() {
 
 			case "plan":
 				if (loadingHistory) flushUserMessage();
-				addSystemMessage("system", "Plan", renderMarkdown("```json\n" + JSON.stringify(msg.entries ?? [], null, 2) + "\n```"));
+				renderPlanPanel(msg.entries);
 				break;
 
 			case "done":
@@ -2043,6 +2943,9 @@ function connect() {
 				setStatus("ready");
 				setBusy(false);
 				renderSessions();
+				notifyTaskComplete();
+				wasBusyForNotification = false;
+				void loadContributions({ refresh: true });
 				break;
 
 			case "error":
@@ -2054,6 +2957,7 @@ function connect() {
 				addSystemMessage("error", "Error", msg.message ?? "Unknown error");
 				contextCompactPending = false;
 				setBusy(false);
+				wasBusyForNotification = false;
 				setStatus("ready");
 				break;
 
@@ -2213,6 +3117,10 @@ $("file-context-toggle")?.addEventListener("click", () => {
 initDropdowns();
 initContextDialPopover();
 initPermissionModal();
+initNotificationPrompt();
+contribGraphLearnEl?.addEventListener("click", () => {
+	contribGraphNoteEl?.classList.toggle("hidden");
+});
 fetchGitInfo();
 connect();
 showView("dashboard", { animate: false });

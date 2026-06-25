@@ -835,6 +835,102 @@ async function buildSessionFileIndex(cwd) {
 	return index;
 }
 
+const SESSION_INDEX_TTL_MS = 30_000;
+const sessionFileIndexCache = new Map();
+
+async function getSessionFileIndex(cwd, { bust = false } = {}) {
+	const resolved = resolve(cwd || DEFAULT_CWD);
+	if (!bust) {
+		const cached = sessionFileIndexCache.get(resolved);
+		if (cached && Date.now() - cached.at < SESSION_INDEX_TTL_MS) {
+			return cached.index;
+		}
+	}
+	const index = await buildSessionFileIndex(resolved);
+	sessionFileIndexCache.set(resolved, { index, at: Date.now() });
+	return index;
+}
+
+function invalidateSessionFileIndex(cwd) {
+	if (cwd) sessionFileIndexCache.delete(resolve(cwd));
+	else sessionFileIndexCache.clear();
+}
+
+function contributionDateKey(value) {
+	if (value == null) return null;
+	const date = typeof value === "number" ? new Date(value) : new Date(value);
+	if (Number.isNaN(date.getTime())) return null;
+	return date.toISOString().slice(0, 10);
+}
+
+function countUserMessagesInLine(line, dayCounts) {
+	if (!line.trim()) return;
+	let row;
+	try {
+		row = JSON.parse(line);
+	} catch {
+		return;
+	}
+	if (row?.type !== "message" || row.message?.role !== "user") return;
+	const key = contributionDateKey(row.timestamp ?? row.message?.timestamp);
+	if (key && Object.hasOwn(dayCounts, key)) {
+		dayCounts[key] += 1;
+	}
+}
+
+async function scanSessionFileContributions(filePath, dayCounts) {
+	try {
+		const content = await readFile(filePath, "utf8");
+		for (const line of content.split("\n")) {
+			countUserMessagesInLine(line, dayCounts);
+		}
+	} catch {
+		// ignore unreadable session files
+	}
+}
+
+function buildContributionDayRange() {
+	const end = new Date();
+	end.setHours(0, 0, 0, 0);
+	const days = {};
+	const keys = [];
+	for (let offset = 364; offset >= 0; offset -= 1) {
+		const date = new Date(end);
+		date.setDate(date.getDate() - offset);
+		const key = date.toISOString().slice(0, 10);
+		days[key] = 0;
+		keys.push(key);
+	}
+	return { days, start: keys[0], end: keys[keys.length - 1] };
+}
+
+const contributionsCache = new Map();
+
+async function aggregateContributions(cwd) {
+	const resolvedCwd = resolve(cwd || DEFAULT_CWD);
+	const { days, start, end } = buildContributionDayRange();
+	const index = await getSessionFileIndex(resolvedCwd);
+	await Promise.all([...index.values()].map((file) => scanSessionFileContributions(file, days)));
+	const total = Object.values(days).reduce((sum, count) => sum + count, 0);
+	return { days, total, start, end, cwd: resolvedCwd };
+}
+
+async function getContributions(cwd, { bust = false } = {}) {
+	const resolvedCwd = resolve(cwd || DEFAULT_CWD);
+	const cached = contributionsCache.get(resolvedCwd);
+	if (!bust && cached && Date.now() - cached.at < 30_000) {
+		return cached.data;
+	}
+	const data = await aggregateContributions(resolvedCwd);
+	contributionsCache.set(resolvedCwd, { at: Date.now(), data });
+	return data;
+}
+
+function invalidateContributionsCache(cwd) {
+	if (cwd) contributionsCache.delete(resolve(cwd));
+	else contributionsCache.clear();
+}
+
 function normalizePiMessageText(content) {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
@@ -957,12 +1053,19 @@ function parseSessionJsonl(content) {
 				kind: toolName,
 			});
 			const outputText = toolResultToText(message);
+			const hasSubagentDetails =
+				message.toolName === "subagent" ||
+				(message.details && typeof message.details === "object" && Array.isArray(message.details.results));
 			events.push({
 				type: "tool",
 				event: "update",
 				id: toolCallId,
 				status: message.isError ? "failed" : "completed",
-				rawOutput: outputText ? truncateWire(outputText) : truncateWire(message),
+				rawOutput: hasSubagentDetails
+					? truncateWire(message)
+					: outputText
+						? truncateWire(outputText)
+						: truncateWire(message),
 			});
 		}
 	}
@@ -1240,6 +1343,23 @@ async function serveGitInfo(req, res) {
 	}
 }
 
+async function serveContributions(req, res) {
+	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+	const requested = url.searchParams.get("cwd");
+	const bust = url.searchParams.get("refresh") === "1";
+
+	try {
+		const cwd = requested ? await resolveProjectPath(requested) : DEFAULT_CWD;
+		const data = await getContributions(cwd, { bust });
+		res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+		res.end(JSON.stringify(data));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+		res.end(JSON.stringify({ message }));
+	}
+}
+
 async function serveStatic(req, res) {
 	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 	let pathname = decodeURIComponent(url.pathname);
@@ -1247,6 +1367,11 @@ async function serveStatic(req, res) {
 
 	if (pathname === "/api/git") {
 		await serveGitInfo(req, res);
+		return;
+	}
+
+	if (pathname === "/api/contributions") {
+		await serveContributions(req, res);
 		return;
 	}
 
@@ -1302,6 +1427,8 @@ class PiSession {
 		this.sessionFileIndex = new Map();
 		this.contextRefreshTimer = null;
 		this.pendingPermissions = new Map();
+		this.defaultsFetched = false;
+		this.defaultsFetchPromise = null;
 	}
 
 	resolvePermissionResponse(requestId, { optionId, cancelled = false } = {}) {
@@ -1495,24 +1622,34 @@ class PiSession {
 		}
 	}
 
-	async fetchAgentDefaults(_sessions) {
-		const replayDefaults = (params) => {
-			forwardDefaultsUpdate(params.update, this.ws);
-		};
-
-		let probe = null;
-		try {
-			this.replayHandler = replayDefaults;
-			probe = await this.ctx.buildSession(this.cwd).start();
-			sendModelsFromConfigOptions(this.ws, probe.newSessionResponse.configOptions);
-			await this.drainProbeDefaults(probe);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			console.error("[pi-web] failed to fetch agent defaults:", message);
-		} finally {
-			this.replayHandler = null;
-			probe?.dispose();
+	async fetchAgentDefaults() {
+		if (this.defaultsFetched || this.defaultsFetchPromise || this.closed || !this.ctx) {
+			return;
 		}
+
+		this.defaultsFetchPromise = (async () => {
+			const replayDefaults = (params) => {
+				forwardDefaultsUpdate(params.update, this.ws);
+			};
+
+			let probe = null;
+			try {
+				this.replayHandler = replayDefaults;
+				probe = await this.ctx.buildSession(this.cwd).start();
+				sendModelsFromConfigOptions(this.ws, probe.newSessionResponse.configOptions);
+				await this.drainProbeDefaults(probe);
+				this.defaultsFetched = true;
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.error("[pi-web] failed to fetch agent defaults:", message);
+			} finally {
+				this.replayHandler = null;
+				probe?.dispose();
+				this.defaultsFetchPromise = null;
+			}
+		})();
+
+		await this.defaultsFetchPromise;
 	}
 
 	async applyPendingModel() {
@@ -1581,15 +1718,17 @@ class PiSession {
 		});
 		this.protocolVersion = init.protocolVersion;
 
-		const listResponse = await this.ctx.request(acp.methods.agent.session.list, {
-			cwd: this.cwd,
-		});
+		const [listResponse, sessionFileIndex] = await Promise.all([
+			this.ctx.request(acp.methods.agent.session.list, {
+				cwd: this.cwd,
+			}),
+			getSessionFileIndex(this.cwd),
+		]);
 		const sessions = listResponse.sessions ?? [];
 		sendJson(this.ws, { type: "sessions", sessions });
 
-		this.sessionFileIndex = await buildSessionFileIndex(this.cwd);
+		this.sessionFileIndex = sessionFileIndex;
 		this.sendReady();
-		void this.fetchAgentDefaults(sessions);
 		void this.warmSessionCaches(sessions);
 	}
 
@@ -1625,6 +1764,8 @@ class PiSession {
 
 		this.cwd = resolved;
 		this.pendingModelId = null;
+		this.defaultsFetched = false;
+		invalidateSessionFileIndex(resolved);
 
 		await this.disconnectAgent();
 
@@ -1652,6 +1793,15 @@ class PiSession {
 		});
 	}
 
+	releaseBusy(stopReason = "end_turn") {
+		if (!this.busy) return;
+		this.busy = false;
+		sendJson(this.ws, {
+			type: "done",
+			stopReason,
+		});
+	}
+
 	async disposeActiveSession() {
 		if (!this.session) return;
 
@@ -1661,6 +1811,7 @@ class PiSession {
 
 		await this.pumpPromise?.catch(() => {});
 		this.pumpPromise = null;
+		this.releaseBusy("cancelled");
 	}
 
 	async loadSession(sessionId, { replay = true } = {}) {
@@ -1721,6 +1872,8 @@ class PiSession {
 			await this.cachedNewSessionPromise.catch(() => {});
 		}
 
+		invalidateSessionFileIndex(this.cwd);
+
 		await this.disposeActiveSession();
 		sendJson(this.ws, { type: "clear" });
 		this.toolTracker.reset();
@@ -1769,7 +1922,7 @@ class PiSession {
 					...sessions,
 				];
 			}
-			this.sessionFileIndex = await buildSessionFileIndex(this.cwd);
+			this.sessionFileIndex = await getSessionFileIndex(this.cwd);
 			sendJson(this.ws, { type: "sessions", sessions });
 			this.warmSessionCaches(sessions);
 			this.scheduleContextRefresh(0);
@@ -1829,6 +1982,7 @@ class PiSession {
 
 		try {
 			await this.session.prompt(prompt);
+			invalidateContributionsCache(this.cwd);
 			void this.refreshSessions();
 		} catch (error) {
 			this.busy = false;
@@ -1861,6 +2015,7 @@ class PiSession {
 				if (this.closed || this.session !== activeSession) break;
 				const msg = error instanceof Error ? error.message : String(error);
 				sendJson(this.ws, { type: "error", message: msg });
+				this.releaseBusy("error");
 				break;
 			}
 		}
@@ -1906,6 +2061,7 @@ class PiSession {
 						];
 
 			await this.session.prompt(prompt);
+			invalidateContributionsCache(this.cwd);
 			void this.refreshSessions();
 		} catch (error) {
 			this.busy = false;
@@ -2002,6 +2158,8 @@ async function handleWebSocket(ws) {
 				optionId: msg.optionId,
 				cancelled: msg.cancelled === true,
 			});
+		} else if (msg.type === "fetch_defaults") {
+			void pi.fetchAgentDefaults();
 		}
 	});
 
