@@ -59,12 +59,16 @@ let fileContextCollapsed = false;
 const CONTEXT_DIAL_CIRCUMFERENCE = 43.982;
 let contextUsage = { used: null, size: null, percent: null, breakdown: [] };
 let contextPopoverTimer = null;
+let contextCompactPending = false;
 
 const contextDialWrapEl = $("context-dial-wrap");
 const contextDialTriggerEl = $("context-dial-trigger");
 const contextPopoverEl = $("context-popover");
 const contextBreakdownEl = $("context-breakdown");
 const contextPopoverSummaryEl = $("context-popover-summary");
+const contextActionsEl = $("context-actions");
+const contextCompactBtnEl = $("context-compact-btn");
+const contextNewSessionBtnEl = $("context-new-session-btn");
 
 const permissionModalEl = $("permission-modal");
 const permissionDialogEl = $("permission-dialog");
