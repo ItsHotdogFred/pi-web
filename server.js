@@ -22,6 +22,17 @@ const PI_ACP_ARGS = process.env.PI_ACP_ARGS
 const PI_ACP_SHELL =
 	process.env.PI_ACP_SHELL === "1" ||
 	(process.env.PI_ACP_SHELL !== "0" && process.platform === "win32" && PI_ACP_COMMAND === "npx");
+const PI_WEB_AUTO_APPROVE = process.env.PI_WEB_AUTO_APPROVE === "1";
+const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
+
+const PERMISSION_KIND_LABELS = {
+	allow_once: "Allow once",
+	allow_always: "Always allow",
+	allow: "Allow",
+	reject_once: "Deny",
+	reject_always: "Always deny",
+	reject: "Deny",
+};
 
 const execFileAsync = promisify(execFile);
 
@@ -170,6 +181,13 @@ function spawnPiAcp(cwd) {
 	return child;
 }
 
+function permissionOptionLabel(option) {
+	if (option?.kind && PERMISSION_KIND_LABELS[option.kind]) {
+		return PERMISSION_KIND_LABELS[option.kind];
+	}
+	return option?.name ?? option?.kind ?? "Choose";
+}
+
 function createAcpClient(piSession) {
 	const app = acp
 		.client({ name: "pi-web" })
@@ -179,18 +197,55 @@ function createAcpClient(piSession) {
 				ctx.params.options.find((option) => option.kind === "allow") ??
 				ctx.params.options[0];
 
+			if (PI_WEB_AUTO_APPROVE) {
+				sendJson(piSession.ws, {
+					type: "permission",
+					tool: ctx.params.toolCall.title,
+					choice: preferred?.name ?? "auto",
+					optionId: preferred?.optionId,
+				});
+
+				return {
+					outcome: {
+						outcome: "selected",
+						optionId: preferred.optionId,
+					},
+				};
+			}
+
+			const requestId = crypto.randomUUID();
+			const tool = {
+				title: ctx.params.toolCall.title,
+				toolCallId: ctx.params.toolCall.toolCallId,
+				kind: ctx.params.toolCall.kind,
+				rawInput: truncateWire(ctx.params.toolCall.rawInput),
+			};
+			const options = ctx.params.options.map((option) => ({
+				optionId: option.optionId,
+				name: permissionOptionLabel(option),
+				kind: option.kind,
+			}));
+
 			sendJson(piSession.ws, {
-				type: "permission",
-				tool: ctx.params.toolCall.title,
-				choice: preferred?.name ?? "auto",
+				type: "permission_request",
+				requestId,
+				tool,
+				options,
 			});
 
-			return {
-				outcome: {
-					outcome: "selected",
-					optionId: preferred.optionId,
-				},
-			};
+			return new Promise((resolve) => {
+				const timeout = setTimeout(() => {
+					piSession.pendingPermissions.delete(requestId);
+					resolve({ outcome: { outcome: "cancelled" } });
+				}, PERMISSION_TIMEOUT_MS);
+
+				piSession.pendingPermissions.set(requestId, {
+					resolve,
+					timeout,
+					tool,
+					options: ctx.params.options,
+				});
+			});
 		})
 		.onRequest(acp.methods.client.fs.readTextFile, async (ctx) => {
 			const content = await readFile(ctx.params.path, "utf8");
@@ -1246,6 +1301,49 @@ class PiSession {
 		this.sessionLoadMutex = Promise.resolve();
 		this.sessionFileIndex = new Map();
 		this.contextRefreshTimer = null;
+		this.pendingPermissions = new Map();
+	}
+
+	resolvePermissionResponse(requestId, { optionId, cancelled = false } = {}) {
+		const pending = this.pendingPermissions.get(requestId);
+		if (!pending) return false;
+
+		clearTimeout(pending.timeout);
+		this.pendingPermissions.delete(requestId);
+
+		if (cancelled || !optionId) {
+			pending.resolve({ outcome: { outcome: "cancelled" } });
+			return true;
+		}
+
+		const selected = pending.options.find((option) => option.optionId === optionId);
+		if (!selected) {
+			pending.resolve({ outcome: { outcome: "cancelled" } });
+			return true;
+		}
+
+		sendJson(this.ws, {
+			type: "permission",
+			tool: pending.tool.title ?? pending.tool.kind ?? "tool",
+			choice: permissionOptionLabel(selected),
+			optionId: selected.optionId,
+		});
+
+		pending.resolve({
+			outcome: {
+				outcome: "selected",
+				optionId: selected.optionId,
+			},
+		});
+		return true;
+	}
+
+	cancelAllPendingPermissions() {
+		for (const [, pending] of this.pendingPermissions) {
+			clearTimeout(pending.timeout);
+			pending.resolve({ outcome: { outcome: "cancelled" } });
+		}
+		this.pendingPermissions.clear();
 	}
 
 	async refreshContextUsage() {
@@ -1438,6 +1536,7 @@ class PiSession {
 	}
 
 	async disconnectAgent() {
+		this.cancelAllPendingPermissions();
 		this.clearSessionCaches();
 		await this.disposeActiveSession();
 		this.replayHandler = null;
@@ -1711,6 +1810,34 @@ class PiSession {
 		}
 	}
 
+	async compactSession(customInstructions) {
+		if (this.busy) {
+			sendJson(this.ws, { type: "error", message: "Pi is still working on the previous message" });
+			return;
+		}
+
+		if (!this.session) {
+			sendJson(this.ws, { type: "error", message: "No active session to compact" });
+			return;
+		}
+
+		const instructions = typeof customInstructions === "string" ? customInstructions.trim() : "";
+		const prompt = instructions ? `/compact ${instructions}` : "/compact";
+
+		this.busy = true;
+		sendJson(this.ws, { type: "status", state: "busy" });
+
+		try {
+			await this.session.prompt(prompt);
+			void this.refreshSessions();
+		} catch (error) {
+			this.busy = false;
+			const message = error instanceof Error ? error.message : String(error);
+			sendJson(this.ws, { type: "error", message });
+			sendJson(this.ws, { type: "status", state: "ready" });
+		}
+	}
+
 	async pumpUpdates() {
 		const activeSession = this.session;
 		while (!this.closed && this.session === activeSession && activeSession) {
@@ -1815,6 +1942,7 @@ class PiSession {
 
 	async cancel() {
 		if (!this.connection || !this.session) return;
+		this.cancelAllPendingPermissions();
 		try {
 			await this.connection.agent.notify(acp.methods.agent.session.cancel, {
 				sessionId: this.session.sessionId,
@@ -1863,10 +1991,17 @@ async function handleWebSocket(ws) {
 			await pi.switchSession(msg.sessionId);
 		} else if (msg.type === "new_session") {
 			await pi.newSession();
+		} else if (msg.type === "compact") {
+			await pi.compactSession(msg.instructions);
 		} else if (msg.type === "set_model") {
 			await pi.setModel(msg.value);
 		} else if (msg.type === "set_cwd") {
 			await pi.setProjectPath(msg.path ?? msg.cwd ?? "");
+		} else if (msg.type === "permission_response") {
+			pi.resolvePermissionResponse(msg.requestId, {
+				optionId: msg.optionId,
+				cancelled: msg.cancelled === true,
+			});
 		}
 	});
 

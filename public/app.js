@@ -79,12 +79,177 @@ function animateEnter(el, className = "anim-fade-up", { delay = 0 } = {}) {
 const CONTEXT_DIAL_CIRCUMFERENCE = 43.982;
 let contextUsage = { used: null, size: null, percent: null, breakdown: [] };
 let contextPopoverTimer = null;
+let contextCompactPending = false;
 
 const contextDialWrapEl = $("context-dial-wrap");
 const contextDialTriggerEl = $("context-dial-trigger");
 const contextPopoverEl = $("context-popover");
 const contextBreakdownEl = $("context-breakdown");
 const contextPopoverSummaryEl = $("context-popover-summary");
+const contextActionsEl = $("context-actions");
+const contextCompactBtnEl = $("context-compact-btn");
+const contextNewSessionBtnEl = $("context-new-session-btn");
+
+const permissionModalEl = $("permission-modal");
+const permissionDialogEl = $("permission-dialog");
+const permissionTitleEl = $("permission-title");
+const permissionDetailsEl = $("permission-details");
+const permissionActionsEl = $("permission-actions");
+
+let permissionQueue = [];
+let activePermissionRequest = null;
+let permissionPreviousFocus = null;
+
+function summarizeRawInput(rawInput) {
+	if (rawInput == null) return "";
+	const text = formatRaw(rawInput);
+	if (!text) return "";
+	const lines = text.split("\n");
+	if (lines.length > 6) return `${lines.slice(0, 6).join("\n")}\n…`;
+	if (text.length > 400) return `${text.slice(0, 400)}…`;
+	return text;
+}
+
+function permissionToolName(tool) {
+	if (!tool || typeof tool !== "object") return "tool";
+	return (
+		normalizeToolName(tool.title) ||
+		normalizeToolName(tool.kind) ||
+		normalizeToolName(tool.toolName) ||
+		"tool"
+	);
+}
+
+function setPermissionModalOpen(open) {
+	if (!permissionModalEl) return;
+	permissionModalEl.classList.toggle("hidden", !open);
+	permissionModalEl.setAttribute("aria-hidden", String(!open));
+}
+
+function showPermissionModal(request) {
+	if (!permissionModalEl || !permissionTitleEl || !permissionActionsEl) return;
+
+	activePermissionRequest = request;
+	permissionPreviousFocus = document.activeElement;
+
+	const toolName = permissionToolName(request.tool);
+	permissionTitleEl.textContent = `Allow ${toolName}?`;
+
+	const details = summarizeRawInput(request.tool?.rawInput);
+	if (permissionDetailsEl) {
+		if (details) {
+			permissionDetailsEl.textContent = details;
+			permissionDetailsEl.classList.remove("hidden");
+		} else {
+			permissionDetailsEl.textContent = "";
+			permissionDetailsEl.classList.add("hidden");
+		}
+	}
+
+	permissionActionsEl.replaceChildren();
+	for (const option of request.options ?? []) {
+		const btn = document.createElement("button");
+		btn.type = "button";
+		btn.className = "permission-btn";
+		if (option.kind?.startsWith("reject")) {
+			btn.classList.add("permission-btn--deny");
+		} else {
+			btn.classList.add("permission-btn--allow");
+			if (option.kind === "allow_always") btn.classList.add("permission-btn--always");
+		}
+		btn.textContent = option.name ?? option.kind ?? "Choose";
+		btn.addEventListener("click", () => respondToPermission(request.requestId, option.optionId));
+		permissionActionsEl.appendChild(btn);
+	}
+
+	setPermissionModalOpen(true);
+	permissionActionsEl.querySelector("button")?.focus();
+}
+
+function hidePermissionModal() {
+	setPermissionModalOpen(false);
+	activePermissionRequest = null;
+	if (permissionPreviousFocus?.focus) {
+		permissionPreviousFocus.focus();
+	}
+	permissionPreviousFocus = null;
+}
+
+function processPermissionQueue() {
+	if (activePermissionRequest || permissionQueue.length === 0) return;
+	showPermissionModal(permissionQueue.shift());
+}
+
+function enqueuePermissionRequest(msg) {
+	permissionQueue.push(msg);
+	processPermissionQueue();
+}
+
+function respondToPermission(requestId, optionId) {
+	if (!ws || ws.readyState !== WebSocket.OPEN) return;
+	ws.send(JSON.stringify({ type: "permission_response", requestId, optionId }));
+	hidePermissionModal();
+	processPermissionQueue();
+}
+
+function cancelActivePermissionRequest() {
+	if (!activePermissionRequest) return;
+	if (ws?.readyState === WebSocket.OPEN) {
+		ws.send(
+			JSON.stringify({
+				type: "permission_response",
+				requestId: activePermissionRequest.requestId,
+				cancelled: true,
+			}),
+		);
+	}
+	hidePermissionModal();
+	processPermissionQueue();
+}
+
+function clearPermissionRequests() {
+	permissionQueue = [];
+	if (activePermissionRequest) {
+		hidePermissionModal();
+	}
+}
+
+function formatPermissionResult(msg) {
+	const tool = permissionToolName(typeof msg.tool === "object" ? msg.tool : { title: msg.tool });
+	const choice = String(msg.choice ?? "").toLowerCase();
+	const kind = String(msg.optionId ?? "").toLowerCase();
+	if (choice.includes("deny") || choice.includes("reject") || kind.includes("reject")) {
+		return `Denied <strong>${tool}</strong>`;
+	}
+	return `Allowed <strong>${tool}</strong>`;
+}
+
+function initPermissionModal() {
+	if (!permissionDialogEl || !permissionActionsEl) return;
+
+	permissionDialogEl.addEventListener("keydown", (event) => {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			cancelActivePermissionRequest();
+			return;
+		}
+
+		if (event.key !== "Tab") return;
+
+		const focusable = [...permissionActionsEl.querySelectorAll("button")];
+		if (focusable.length === 0) return;
+
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		if (event.shiftKey && document.activeElement === first) {
+			event.preventDefault();
+			last.focus();
+		} else if (!event.shiftKey && document.activeElement === last) {
+			event.preventDefault();
+			first.focus();
+		}
+	});
+}
 
 function formatTokenCount(value) {
 	if (value == null || Number.isNaN(value)) return "—";
@@ -188,6 +353,23 @@ function renderContextUsage() {
 	}
 
 	renderContextBreakdown(breakdown, size);
+
+	if (contextActionsEl) {
+		const showActions =
+			Boolean(sessionId) && currentView === "chat" && percent != null && percent >= 70;
+		contextActionsEl.classList.toggle("hidden", !showActions);
+		contextActionsEl.classList.toggle("context-actions--high", level === "high");
+	}
+
+	if (contextCompactBtnEl) {
+		const compacting = contextCompactPending && busy;
+		contextCompactBtnEl.disabled = busy || creatingSession || contextCompactPending;
+		contextCompactBtnEl.textContent = compacting ? "Compacting…" : "Compact now";
+	}
+
+	if (contextNewSessionBtnEl) {
+		contextNewSessionBtnEl.disabled = busy || creatingSession;
+	}
 }
 
 function setContextUsage(next) {
@@ -222,6 +404,28 @@ function initContextDialPopover() {
 	contextDialWrapEl.addEventListener("focusin", openPopover);
 	contextDialWrapEl.addEventListener("focusout", (event) => {
 		if (!contextDialWrapEl.contains(event.relatedTarget)) closePopover();
+	});
+
+	contextCompactBtnEl?.addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		if (!ws || ws.readyState !== WebSocket.OPEN || busy || creatingSession || contextCompactPending) return;
+		contextCompactPending = true;
+		renderContextUsage();
+		setStatus("busy");
+		ws.send(JSON.stringify({ type: "compact" }));
+	});
+
+	contextNewSessionBtnEl?.addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		if (!ws || ws.readyState !== WebSocket.OPEN || busy || creatingSession) return;
+		const percent = contextUsage.percent ?? 0;
+		if (percent < 90) {
+			const ok = confirm("Start a fresh session? Your current conversation will remain in history.");
+			if (!ok) return;
+		}
+		newSession();
 	});
 }
 
@@ -797,6 +1001,7 @@ function setBusy(nextBusy) {
 	chatInputEl.disabled = !connected;
 	sendEl.classList.toggle("hidden", !canSendDashboard);
 	cancelEl?.classList.toggle("hidden", !busy);
+	renderContextUsage();
 }
 
 function getAttachmentsFor(target) {
@@ -1663,6 +1868,7 @@ function connect() {
 	ws.addEventListener("open", () => setBusy(false));
 
 	ws.addEventListener("close", () => {
+		clearPermissionRequests();
 		setStatus("error", gotReady ? "Disconnected" : lastError || "Disconnected");
 		setBusy(false);
 	});
@@ -1818,8 +2024,12 @@ function connect() {
 				updateToolCard(msg);
 				break;
 
+			case "permission_request":
+				enqueuePermissionRequest(msg);
+				break;
+
 			case "permission":
-				addSystemMessage("system", "Permission", `Auto-approved: <strong>${msg.tool ?? "tool"}</strong>`);
+				addSystemMessage("system", "Permission", formatPermissionResult(msg));
 				break;
 
 			case "plan":
@@ -1829,6 +2039,7 @@ function connect() {
 
 			case "done":
 				finalizeAssistantTurn();
+				contextCompactPending = false;
 				setStatus("ready");
 				setBusy(false);
 				renderSessions();
@@ -1841,6 +2052,7 @@ function connect() {
 					pendingProjectPath = null;
 				}
 				addSystemMessage("error", "Error", msg.message ?? "Unknown error");
+				contextCompactPending = false;
 				setBusy(false);
 				setStatus("ready");
 				break;
@@ -2000,6 +2212,7 @@ $("file-context-toggle")?.addEventListener("click", () => {
 
 initDropdowns();
 initContextDialPopover();
+initPermissionModal();
 fetchGitInfo();
 connect();
 showView("dashboard", { animate: false });

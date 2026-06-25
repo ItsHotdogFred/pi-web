@@ -218,6 +218,10 @@
 												<span class="context-popover-summary" id="context-popover-summary">— / —</span>
 											</div>
 											<ul class="context-breakdown" id="context-breakdown"></ul>
+											<div class="context-actions hidden" id="context-actions">
+												<button type="button" class="context-action-btn" id="context-compact-btn">Compact now</button>
+												<button type="button" class="context-action-btn context-action-btn--secondary" id="context-new-session-btn">Start fresh session</button>
+											</div>
 											<p class="context-popover-note">Without SYSTEM.md, Pi uses its bundled default prompt (dist/core/system-prompt.js). APPEND_SYSTEM.md extends that base. Skills and MCP tool schemas add separately.</p>
 										</div>
 									</div>
@@ -264,6 +268,21 @@
 		</div>
 
 		<input type="file" id="file-input" accept="image/*" class="hidden" />
+
+		<div class="permission-modal hidden" id="permission-modal" aria-hidden="true">
+			<div class="permission-backdrop" id="permission-backdrop"></div>
+			<div
+				class="permission-dialog"
+				id="permission-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="permission-title"
+			>
+				<h2 class="permission-title" id="permission-title">Allow tool?</h2>
+				<pre class="permission-details hidden" id="permission-details"></pre>
+				<div class="permission-actions" id="permission-actions"></div>
+			</div>
+		</div>
 
 		<script src="/marked.min.js"></script>
 		<script src="/session-art.js"></script>
