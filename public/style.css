@@ -2464,6 +2464,77 @@ input {
 	border-color: rgba(248, 113, 113, 0.45);
 }
 
+/* ── Project note modal ── */
+
+.project-note-dialog {
+	position: relative;
+	z-index: 1;
+	width: min(42rem, 100%);
+	padding: 1.1rem 1.15rem 1rem;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: #161616;
+	box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+	display: flex;
+	flex-direction: column;
+	gap: 0.55rem;
+}
+
+.project-note-header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+
+.project-note-header .permission-title {
+	margin: 0;
+}
+
+.project-note-status {
+	font-size: 0.72rem;
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.project-note-path {
+	margin: 0;
+	font-family: ui-monospace, "SF Mono", Menlo, monospace;
+	font-size: 0.68rem;
+	color: var(--muted);
+	word-break: break-all;
+}
+
+.project-note-input {
+	width: 100%;
+	min-height: 14rem;
+	max-height: min(50vh, 24rem);
+	padding: 0.75rem 0.8rem;
+	border: 1px solid var(--border-subtle);
+	border-radius: 10px;
+	background: #111;
+	color: var(--text);
+	font-family: ui-monospace, "SF Mono", Menlo, monospace;
+	font-size: 0.82rem;
+	line-height: 1.5;
+	resize: vertical;
+}
+
+.project-note-input:focus {
+	outline: none;
+	border-color: #444;
+}
+
+.project-note-actions {
+	justify-content: space-between;
+	align-items: center;
+}
+
+.project-note-hint {
+	font-size: 0.72rem;
+	color: var(--muted);
+}
+
 /* ── Commands overlay ── */
 
 .commands-overlay {

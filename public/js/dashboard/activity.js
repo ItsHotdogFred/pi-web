@@ -4,7 +4,7 @@ import {
 	todayListEl,
 	activityFeedEl,
 } from "../dom/elements.js";
-import { hashCode, formatRelativeTime } from "../utils/format.js";
+import { hashCode, formatRelativeTime, escapeHtml } from "../utils/format.js";
 import { animateEnter } from "../utils/animation.js";
 import { SessionArt } from "../session-art.js";
 import {
@@ -123,7 +123,7 @@ function renderTodayList() {
 			? "Working…"
 			: formatRelativeTime(session.updatedAt) || sessionProjectName(session);
 
-		btn.innerHTML = `${icon}<span class="today-item-body"><span class="today-item-title">${sessionTitle(session)}</span><span class="today-item-meta">${meta}</span></span>`;
+		btn.innerHTML = `${icon}<span class="today-item-body"><span class="today-item-title">${escapeHtml(sessionTitle(session))}</span><span class="today-item-meta">${escapeHtml(meta)}</span></span>`;
 
 		btn.addEventListener("click", () => openSession(session.sessionId));
 		todayListEl.appendChild(btn);
@@ -138,9 +138,12 @@ function renderActivityCardLeft(session, status, isRunning) {
 		left.classList.add("code-preview");
 		const preview = app.lastPrompt || sessionTitle(session);
 		const lines = preview.split("\n").slice(0, 2);
-		left.innerHTML = lines
-			.map((line) => `<div class="code-line">${line.trim()}</div>`)
-			.join("");
+		for (const line of lines) {
+			const row = document.createElement("div");
+			row.className = "code-line";
+			row.textContent = line.trim();
+			left.appendChild(row);
+		}
 		return left;
 	}
 
@@ -164,7 +167,7 @@ function renderActivityCardLeft(session, status, isRunning) {
 
 	const badge = document.createElement("span");
 	badge.className = `activity-badge ${status.variant}`;
-	badge.innerHTML = `${sessionBadgeIcon(status.variant)} ${status.label}`;
+	badge.innerHTML = `${sessionBadgeIcon(status.variant)} ${escapeHtml(status.label)}`;
 
 	content.append(meta, badge);
 	left.append(content);

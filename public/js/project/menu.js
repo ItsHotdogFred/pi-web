@@ -1,7 +1,7 @@
 import { app } from "../state/store.js";
 import { RECENT_PROJECTS_KEY } from "../config.js";
 import { $, sidebarEl } from "../dom/elements.js";
-import { basename } from "../utils/format.js";
+import { basename, escapeHtml } from "../utils/format.js";
 import { clearChat } from "../chat/messages.js";
 import { showView } from "../ui/views.js";
 import { renderModelMenu } from "../ui/models.js";
@@ -9,6 +9,7 @@ import { renderSessions } from "../dashboard/sessions.js";
 import { resetContextUsage } from "../context/dial.js";
 import { syncGitContext } from "./git.js";
 import { loadContributions } from "../dashboard/contributions.js";
+import { reloadProjectNoteIfOpen } from "./note.js";
 import { closeAllDropdowns } from "../ui/dropdowns.js";
 
 export function setProjectName(path) {
@@ -17,6 +18,7 @@ export function setProjectName(path) {
 	app.gitInfo.path = path || app.gitInfo.path;
 	syncGitContext();
 	void loadContributions();
+	reloadProjectNoteIfOpen();
 }
 
 export function loadRecentProjects() {
@@ -61,7 +63,7 @@ export function renderProjectMenu() {
 		const btn = document.createElement("button");
 		btn.type = "button";
 		btn.className = "dropdown-item project-menu-item" + (path === current ? " selected" : "");
-		btn.innerHTML = `<span class="project-menu-name">${basename(path)}</span><span class="project-menu-path">${path}</span>`;
+		btn.innerHTML = `<span class="project-menu-name">${escapeHtml(basename(path))}</span><span class="project-menu-path">${escapeHtml(path)}</span>`;
 		btn.addEventListener("click", () => chooseProject(path));
 		list.appendChild(btn);
 	}

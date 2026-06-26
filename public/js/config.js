@@ -1,5 +1,7 @@
 export const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 
+export const MAX_PROMPT_BYTES = 10 * 1024 * 1024;
+
 export const RECENT_PROJECTS_KEY = "pi-web-recent-projects";
 export const ACTIVITY_ART_KEY = "pi-web-activity-art-style";
 export const EDITOR_PREF_KEY = "pi-web-preferred-editor";

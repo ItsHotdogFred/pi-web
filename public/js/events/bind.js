@@ -20,10 +20,12 @@ import { showView, setNavActive } from "../ui/views.js";
 import { renderSessions } from "../dashboard/sessions.js";
 import { cycleActivityArtStyle } from "../dashboard/activity.js";
 import { sendPrompt } from "../wire/send.js";
+import { reconnect } from "../wire/websocket.js";
 import { resizeTextarea } from "../composer/textarea.js";
-import { addImageAttachment } from "../composer/attachments.js";
+import { addImageAttachment, handleImagePaste } from "../composer/attachments.js";
 import { updateInlineCommands, updateChatSlashCommands, openCommands, closeCommands } from "../commands/palette.js";
 import { renderFileContext } from "../chat/tools.js";
+import { toggleProjectNote } from "../project/note.js";
 
 export function bindEvents() {
 	composerEl.addEventListener("submit", (e) => {
@@ -47,6 +49,11 @@ export function bindEvents() {
 		}
 	});
 
+	inputEl.addEventListener("paste", (e) => {
+		app.attachTarget = inputEl;
+		handleImagePaste(e, inputEl);
+	});
+
 	inputEl.addEventListener("input", () => {
 		resizeTextarea(inputEl);
 		setBusy(app.busy);
@@ -58,6 +65,11 @@ export function bindEvents() {
 			e.preventDefault();
 			chatComposerEl.requestSubmit();
 		}
+	});
+
+	chatInputEl.addEventListener("paste", (e) => {
+		app.attachTarget = chatInputEl;
+		handleImagePaste(e, chatInputEl);
 	});
 
 	chatInputEl.addEventListener("input", () => {
@@ -88,9 +100,19 @@ export function bindEvents() {
 
 	document.addEventListener("keydown", (e) => {
 		if (e.key === "Escape") closeCommands();
+		if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "r") {
+			e.preventDefault();
+			reconnect();
+			return;
+		}
 		if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "g") {
 			e.preventDefault();
 			void cycleActivityArtStyle();
+			return;
+		}
+		if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "n") {
+			e.preventDefault();
+			toggleProjectNote();
 			return;
 		}
 		if (e.key === "/" && document.activeElement !== inputEl && document.activeElement !== chatInputEl) {

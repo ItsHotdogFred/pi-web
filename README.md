@@ -86,6 +86,23 @@ npm start
 
 Open [http://localhost:3847](http://localhost:3847).
 
+### Global command (Windows / macOS / Linux)
+
+Install once from the pi-web directory:
+
+```bash
+npm install -g .
+```
+
+Then from any project folder:
+
+```bash
+cd C:\path\to\your\project
+piweb
+```
+
+That starts pi-web with the folder you ran the command in as the default project. Same env vars as `npm start` (`PORT`, `PI_CWD`, etc.) still apply.
+
 To aim Pi at a specific repo on startup:
 
 ```bash
@@ -104,7 +121,9 @@ That was it.
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
+| `HOST` | `127.0.0.1` | Bind address (`HOST=0.0.0.0` for LAN access) |
 | `PORT` | `3847` | HTTP + WebSocket port |
+| `MAX_PROMPT_BYTES` | `10485760` (10 MB) | Max WebSocket message / image payload size |
 | `PI_CWD` | current directory | Default project folder |
 | `PI_ACP_COMMAND` | Node binary running the server | Command that launches pi-acp |
 | `PI_ACP_ARGS` | bundled pi-acp entry | Arguments (space-separated) |
@@ -115,6 +134,9 @@ That was it.
 Examples:
 
 ```bash
+# Listen on all interfaces for LAN access
+HOST=0.0.0.0 npm start
+
 # Different port (another pi-web already running)
 PORT=3848 npm start
 

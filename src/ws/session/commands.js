@@ -1,5 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk";
 
+import { MAX_PROMPT_BYTES } from "../../config.js";
 import { invalidateContributionsCache } from "../../analytics/contributions.js";
 import { sendJson } from "../../wire/send.js";
 import { cancelAllPendingPermissions } from "./permissions.js";
@@ -25,6 +26,15 @@ export async function handlePrompt(session, text, images = []) {
 		: [];
 
 	if (!trimmed && imageBlocks.length === 0) return;
+
+	const imageBytes = imageBlocks.reduce((sum, image) => sum + (image.data?.length ?? 0), 0);
+	if (imageBytes > MAX_PROMPT_BYTES) {
+		sendJson(session.ws, {
+			type: "error",
+			message: `Image payload exceeds ${MAX_PROMPT_BYTES} byte limit`,
+		});
+		return;
+	}
 
 	session.busy = true;
 	sendJson(session.ws, { type: "status", state: "busy" });

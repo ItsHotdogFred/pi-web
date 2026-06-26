@@ -8,6 +8,7 @@ import {
 	chatInputEl,
 } from "../dom/elements.js";
 import { animateEnter } from "../utils/animation.js";
+import { escapeHtml } from "../utils/format.js";
 import { requestAgentDefaults } from "../notifications/prompt.js";
 import { getActiveInput } from "../chat/messages.js";
 
@@ -34,7 +35,7 @@ function renderCommandsInto(listEl, filter, onSelect) {
 
 	if (matches.length === 0) {
 		const empty = document.createElement("li");
-		empty.innerHTML = `<button type="button" disabled><span class="command-desc">${app.commands.length ? "No matching commands" : "Waiting for Pi commands…"}</span></button>`;
+		empty.innerHTML = `<button type="button" disabled><span class="command-desc">${escapeHtml(app.commands.length ? "No matching commands" : "Waiting for Pi commands…")}</span></button>`;
 		listEl.appendChild(empty);
 		return;
 	}
@@ -43,7 +44,7 @@ function renderCommandsInto(listEl, filter, onSelect) {
 		const li = document.createElement("li");
 		const btn = document.createElement("button");
 		btn.type = "button";
-		btn.innerHTML = `<span class="command-name">/${command.name}</span><span class="command-desc">${command.description || command.hint || ""}</span>`;
+		btn.innerHTML = `<span class="command-name">/${escapeHtml(command.name)}</span><span class="command-desc">${escapeHtml(command.description || command.hint || "")}</span>`;
 		btn.addEventListener("click", () => onSelect(command));
 		li.appendChild(btn);
 		listEl.appendChild(li);

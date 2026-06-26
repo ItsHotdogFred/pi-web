@@ -34,6 +34,7 @@ import {
 	appendAssistantChunk,
 	appendThoughtChunk,
 	finalizeAssistantTurn,
+	flushMarkdownRender,
 	clearChat,
 } from "../chat/messages.js";
 import { updateToolCard, renderPlanPanel } from "../chat/tools.js";
@@ -49,9 +50,12 @@ import {
 } from "../notifications/prompt.js";
 import { deliverPrompt } from "./send.js";
 
-const RECONNECT_INTERVAL_MS = 5000;
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+const MAX_RECONNECT_ATTEMPTS = 20;
 
 let reconnectTimer = null;
+let reconnectAttempt = 0;
 let connectionGeneration = 0;
 /** @type {string | null} */
 let resumeSessionId = null;
@@ -63,12 +67,21 @@ function clearReconnectTimer() {
 	}
 }
 
+function getReconnectDelayMs() {
+	const delay = RECONNECT_BASE_MS * 2 ** (reconnectAttempt - 1);
+	return Math.min(delay, RECONNECT_MAX_MS);
+}
+
+function resetReconnectAttempts() {
+	reconnectAttempt = 0;
+}
+
 function scheduleReconnect() {
 	clearReconnectTimer();
 	reconnectTimer = setTimeout(() => {
 		reconnectTimer = null;
 		connect(true);
-	}, RECONNECT_INTERVAL_MS);
+	}, getReconnectDelayMs());
 }
 
 function resetConnectionState(isReconnect) {
@@ -91,8 +104,15 @@ function resetConnectionState(isReconnect) {
 	}
 }
 
+export function reconnect() {
+	resetReconnectAttempts();
+	clearReconnectTimer();
+	connect(false);
+}
+
 export function connect(isReconnect = false) {
 	clearReconnectTimer();
+	if (!isReconnect) resetReconnectAttempts();
 	connectionGeneration += 1;
 	const generation = connectionGeneration;
 
@@ -117,8 +137,14 @@ export function connect(isReconnect = false) {
 	app.ws.addEventListener("close", () => {
 		if (generation !== connectionGeneration) return;
 		clearPermissionRequests();
-		setStatus("error", app.gotReady ? "Disconnected" : app.lastError || "Disconnected");
 		setBusy(false);
+		reconnectAttempt += 1;
+		if (reconnectAttempt > MAX_RECONNECT_ATTEMPTS) {
+			clearReconnectTimer();
+			setStatus("error", "Disconnected — refresh to retry");
+			return;
+		}
+		setStatus("error", app.gotReady ? "Disconnected" : app.lastError || "Disconnected");
 		scheduleReconnect();
 	});
 
@@ -224,6 +250,7 @@ export function connect(isReconnect = false) {
 						flushUserMessage();
 						app.loadingHistory = false;
 					}
+					resetReconnectAttempts();
 					app.gotReady = true;
 					app.connectionState = "ready";
 					app.startupBuffer = "";
@@ -327,6 +354,7 @@ export function connect(isReconnect = false) {
 					app.pendingProjectPath = null;
 				}
 				cancelSessionSwitchAnimation();
+				flushMarkdownRender();
 				addSystemMessage("error", "Error", msg.message ?? "Unknown error");
 				app.contextCompactPending = false;
 				setBusy(false);

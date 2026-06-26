@@ -1,6 +1,7 @@
 import { app } from "../state/store.js";
 import { $, inputEl, chatInputEl } from "../dom/elements.js";
 import { setBusy } from "../ui/status.js";
+import { escapeHtml } from "../utils/format.js";
 
 export function getAttachmentsFor(target) {
 	return target === chatInputEl ? app.chatAttachments : app.dashboardAttachments;
@@ -27,7 +28,7 @@ export function renderAttachmentPreviews(target = app.attachTarget) {
 		const chip = document.createElement("div");
 		chip.className = "attachment-chip";
 		chip.innerHTML = `
-			<img src="${attachment.previewUrl}" alt="${attachment.name}" />
+			<img src="${attachment.previewUrl}" alt="${escapeHtml(attachment.name)}" />
 			<button type="button" class="attachment-remove" aria-label="Remove image">×</button>`;
 		chip.querySelector(".attachment-remove").addEventListener("click", (e) => {
 			e.preventDefault();
@@ -42,6 +43,22 @@ export function renderAttachmentPreviews(target = app.attachTarget) {
 	setBusy(app.busy);
 }
 
+export function handleImagePaste(event, target) {
+	const items = event.clipboardData?.items;
+	if (!items) return false;
+
+	for (const item of items) {
+		if (!item.type.startsWith("image/")) continue;
+		const file = item.getAsFile();
+		if (!file) continue;
+		event.preventDefault();
+		addImageAttachment(file, target);
+		return true;
+	}
+
+	return false;
+}
+
 export function addImageAttachment(file, target = app.attachTarget) {
 	if (!file || !file.type.startsWith("image/")) return;
 
@@ -49,8 +66,10 @@ export function addImageAttachment(file, target = app.attachTarget) {
 	reader.onload = () => {
 		const previewUrl = reader.result;
 		const base64 = String(previewUrl).split(",")[1] ?? "";
+		const ext = (file.type.split("/")[1] || "png").replace("jpeg", "jpg");
+		const name = file.name?.trim() || `pasted-${Date.now()}.${ext}`;
 		getAttachmentsFor(target).push({
-			name: file.name,
+			name,
 			mimeType: file.type || "image/png",
 			data: base64,
 			previewUrl,

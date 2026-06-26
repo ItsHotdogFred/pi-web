@@ -1,0 +1,4 @@
+{"type":"session","id":"test-session-001","cwd":"/tmp/test-project"}
+{"type":"message","id":"msg-user-1","message":{"role":"user","content":[{"type":"text","text":"Hello Pi"}]}}
+{"type":"message","id":"msg-assistant-1","message":{"role":"assistant","content":[{"type":"text","text":"Let me search the codebase."},{"type":"toolCall","id":"call-grep-1","name":"mcp_ffgrep","arguments":{"pattern":"wire"}}]}}
+{"type":"message","id":"msg-tool-1","message":{"role":"toolResult","toolCallId":"call-grep-1","toolName":"mcp_ffgrep","content":[{"type":"text","text":"src/wire/send.js\nsrc/wire/acpEvents.js"}]}}

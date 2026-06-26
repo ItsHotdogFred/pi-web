@@ -4,14 +4,19 @@
   "description": "Barebones web UI for Pi via ACP",
   "type": "module",
   "license": "MIT",
+  "bin": {
+    "piweb": "bin/piweb.js"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
     "desktop": "node desktop/launcher.cjs",
     "desktop:build": "powershell -ExecutionPolicy Bypass -File scripts/build-desktop.ps1",
+    "desktop:shell": "powershell -ExecutionPolicy Bypass -File scripts/build-pake-shell.ps1",
     "desktop:launcher": "powershell -ExecutionPolicy Bypass -File scripts/rebuild-launcher.ps1",
     "setup:kimchi": "node scripts/setup-kimchi-for-pi.mjs",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "test:smoke": "node test/run-smoke.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.29.0",
@@ -21,6 +26,7 @@
     "ws": "^8.18.1"
   },
   "devDependencies": {
+    "jsdom": "^29.1.1",
     "resedit": "^3.0.2"
   }
 }

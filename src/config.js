@@ -5,6 +5,8 @@ export const APP_ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const PUBLIC_DIR = join(APP_ROOT, "public");
 
 export const PORT = Number(process.env.PORT || 3847);
+export const HOST = process.env.HOST || "127.0.0.1";
+export const MAX_PROMPT_BYTES = Number(process.env.MAX_PROMPT_BYTES || 10 * 1024 * 1024);
 export const DEFAULT_CWD = process.env.PI_CWD || process.cwd();
 
 export const PI_ACP_ENTRY = join(APP_ROOT, "node_modules", "pi-acp", "dist", "index.js");

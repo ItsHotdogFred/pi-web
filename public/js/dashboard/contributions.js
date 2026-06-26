@@ -22,8 +22,8 @@ function formatContributionTooltip(dateKey, count) {
 		day: "numeric",
 		year: "numeric",
 	});
-	const noun = count === 1 ? "contribution" : "contributions";
-	return count > 0 ? `${count} ${noun} on ${label}` : `No contributions on ${label}`;
+	const noun = count === 1 ? "prompt" : "prompts";
+	return count > 0 ? `${count} ${noun} on ${label}` : `No prompts on ${label}`;
 }
 
 function buildHeatmapWeeks(dayData, rangeStart, rangeEnd) {
@@ -64,13 +64,13 @@ function renderContributionGraph(payload) {
 	const rangeEnd = payload?.end ?? Object.keys(dayData).sort().at(-1);
 
 	if (!rangeStart || !rangeEnd) {
-		contribGraphCountEl.textContent = "No contribution data yet";
+		contribGraphCountEl.textContent = "No prompt data yet";
 		contribGraphWeeksEl.replaceChildren();
 		if (contribGraphMonthsEl) contribGraphMonthsEl.replaceChildren();
 		return;
 	}
 
-	contribGraphCountEl.innerHTML = `<strong>${total.toLocaleString()}</strong> contribution${total === 1 ? "" : "s"} in the last year`;
+	contribGraphCountEl.innerHTML = `<strong>${total.toLocaleString()}</strong> prompt${total === 1 ? "" : "s"} in the last year`;
 
 	const weeks = buildHeatmapWeeks(dayData, rangeStart, rangeEnd);
 	contribGraphWeeksEl.replaceChildren();
@@ -132,7 +132,7 @@ export async function loadContributions({ refresh = false } = {}) {
 		renderContributionGraph(payload);
 	} catch {
 		if (requestId !== app.contributionsRequestId) return;
-		if (contribGraphCountEl) contribGraphCountEl.textContent = "Could not load contribution activity";
+		if (contribGraphCountEl) contribGraphCountEl.textContent = "Could not load prompt activity";
 	} finally {
 		if (requestId === app.contributionsRequestId) app.contributionsLoading = false;
 	}

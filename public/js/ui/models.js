@@ -1,6 +1,7 @@
 import { app } from "../state/store.js";
 import { MODEL_SCOPES } from "../config.js";
 import { $, modelLabelEl } from "../dom/elements.js";
+import { escapeHtml } from "../utils/format.js";
 import { requestAgentDefaults } from "../notifications/prompt.js";
 import { renderSessions } from "../dashboard/sessions.js";
 import { closeAllDropdowns } from "./dropdowns.js";
@@ -65,7 +66,7 @@ export function renderModelMenuList(listId = "model-menu-list") {
 		const btn = document.createElement("button");
 		btn.type = "button";
 		btn.className = "dropdown-item" + (model.id === app.currentModelId ? " selected" : "");
-		btn.innerHTML = `<span class="model-option-name">${model.name}</span>${model.description ? `<span class="model-option-desc">${model.description}</span>` : ""}`;
+		btn.innerHTML = `<span class="model-option-name">${escapeHtml(model.name)}</span>${model.description ? `<span class="model-option-desc">${escapeHtml(model.description)}</span>` : ""}`;
 		btn.addEventListener("click", () => selectModel(model.id));
 		list.appendChild(btn);
 	}

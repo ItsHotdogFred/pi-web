@@ -54,3 +54,12 @@ export const permissionActionsEl = $("permission-actions");
 export const notificationPromptModalEl = $("notification-prompt-modal");
 export const notificationPromptEnableEl = $("notification-prompt-enable");
 export const notificationPromptDismissEl = $("notification-prompt-dismiss");
+
+export const projectNoteModalEl = $("project-note-modal");
+export const projectNoteBackdropEl = $("project-note-backdrop");
+export const projectNoteDialogEl = $("project-note-dialog");
+export const projectNoteTitleEl = $("project-note-title");
+export const projectNotePathEl = $("project-note-path");
+export const projectNoteStatusEl = $("project-note-status");
+export const projectNoteInputEl = $("project-note-input");
+export const projectNoteCloseEl = $("project-note-close");

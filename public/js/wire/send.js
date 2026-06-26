@@ -1,13 +1,32 @@
+import { MAX_PROMPT_BYTES } from "../config.js";
 import { app } from "../state/store.js";
 import { inputEl, chatInputEl } from "../dom/elements.js";
 import { showView } from "../ui/views.js";
-import { addUserMessage } from "../chat/messages.js";
+import { addUserMessage, addSystemMessage } from "../chat/messages.js";
 import { getAttachmentsFor, clearAttachments } from "../composer/attachments.js";
 import { resizeTextarea } from "../composer/textarea.js";
 import { newSession } from "../dashboard/sessions.js";
 
+function promptPayloadBytes(trimmed, images) {
+	const payload = JSON.stringify({
+		type: "prompt",
+		text: trimmed,
+		images: images.map(({ mimeType, data }) => ({ mimeType, data })),
+	});
+	return new TextEncoder().encode(payload).length;
+}
+
 export function deliverPrompt(trimmed, images, fromChat = false) {
 	const target = fromChat ? chatInputEl : inputEl;
+
+	if (promptPayloadBytes(trimmed, images) > MAX_PROMPT_BYTES) {
+		addSystemMessage(
+			"error",
+			"Error",
+			`Message is too large to send (limit: ${Math.round(MAX_PROMPT_BYTES / (1024 * 1024))} MB). Remove some images and try again.`,
+		);
+		return;
+	}
 
 	app.lastPrompt = trimmed || (images.length ? `[${images.length} image${images.length === 1 ? "" : "s"}]` : "");
 	showView("chat");

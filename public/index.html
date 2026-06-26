@@ -6,9 +6,105 @@
 		<title>Pi</title>
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 		<link rel="stylesheet" href="/style.css" />
+		<link rel="stylesheet" href="/skeleton-dashboard.css" />
+		<style>
+			#startup-splash {
+				position: fixed;
+				inset: 0;
+				z-index: 10000;
+				transition: opacity 0.35s ease, visibility 0.35s ease;
+			}
+
+			#startup-splash.startup-splash--hidden {
+				opacity: 0;
+				visibility: hidden;
+				pointer-events: none;
+			}
+
+			.app--booting {
+				visibility: hidden;
+			}
+		</style>
 	</head>
 	<body>
-		<div class="app">
+		<div id="startup-splash" class="dashboard-skeleton" aria-live="polite" aria-busy="true">
+			<div class="app">
+				<aside class="sidebar" aria-hidden="true">
+					<div class="sidebar-top">
+						<div class="skeleton-block skeleton-icon-btn"></div>
+					</div>
+					<nav class="sidebar-nav">
+						<div class="skeleton-block skeleton-nav-item"></div>
+					</nav>
+					<section class="sidebar-section">
+						<div class="skeleton-block skeleton-section-title"></div>
+						<div class="skeleton-block skeleton-today-item"></div>
+						<div class="skeleton-block skeleton-today-item"></div>
+						<div class="skeleton-block skeleton-today-item"></div>
+					</section>
+				</aside>
+
+				<main class="main">
+					<div class="view view-dashboard">
+						<header class="page-header">
+							<div class="context-chips">
+								<div class="skeleton-block skeleton-chip"></div>
+								<div class="skeleton-block skeleton-chip skeleton-chip--short"></div>
+							</div>
+							<div class="connection-status status-connecting">
+								<span class="status-dot" aria-hidden="true"></span>
+								<span id="startup-splash-status">Loading…</span>
+							</div>
+						</header>
+
+						<div class="dashboard-body">
+							<div class="skeleton-composer">
+								<div class="skeleton-block skeleton-composer-input"></div>
+								<div class="skeleton-composer-bar">
+									<div class="skeleton-block skeleton-pill"></div>
+									<div class="skeleton-composer-actions">
+										<div class="skeleton-block skeleton-icon-btn"></div>
+										<div class="skeleton-block skeleton-send-btn"></div>
+									</div>
+								</div>
+							</div>
+
+							<div class="skeleton-block skeleton-commands-hint"></div>
+
+							<div class="skeleton-contrib">
+								<div class="skeleton-block skeleton-contrib-title"></div>
+								<div class="skeleton-contrib-grid" id="startup-skeleton-contrib" aria-hidden="true"></div>
+							</div>
+
+							<div class="skeleton-activity" aria-hidden="true">
+								<div class="skeleton-activity-card">
+									<div class="skeleton-block skeleton-activity-art"></div>
+									<div class="skeleton-activity-body">
+										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--title"></div>
+										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--meta"></div>
+									</div>
+								</div>
+								<div class="skeleton-activity-card">
+									<div class="skeleton-block skeleton-activity-art"></div>
+									<div class="skeleton-activity-body">
+										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--title"></div>
+										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--meta"></div>
+									</div>
+								</div>
+								<div class="skeleton-activity-card">
+									<div class="skeleton-block skeleton-activity-art"></div>
+									<div class="skeleton-activity-body">
+										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--title"></div>
+										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--meta"></div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</main>
+			</div>
+		</div>
+		<div class="app app--booting">
 			<aside class="sidebar" id="sidebar">
 				<div class="sidebar-top">
 					<button type="button" class="icon-btn" id="search-btn" aria-label="Search">
@@ -339,6 +435,33 @@
 					<button type="button" class="permission-btn permission-btn--allow" id="notification-prompt-enable">
 						Enable notifications
 					</button>
+				</div>
+			</div>
+		</div>
+
+		<div class="permission-modal hidden" id="project-note-modal" aria-hidden="true">
+			<div class="permission-backdrop" id="project-note-backdrop"></div>
+			<div
+				class="project-note-dialog"
+				id="project-note-dialog"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="project-note-title"
+			>
+				<div class="project-note-header">
+					<h2 class="permission-title" id="project-note-title">Project note</h2>
+					<span class="project-note-status" id="project-note-status"></span>
+				</div>
+				<p class="project-note-path" id="project-note-path"></p>
+				<textarea
+					class="project-note-input"
+					id="project-note-input"
+					placeholder="Scratchpad for this project — todos, context, links…"
+					spellcheck="true"
+				></textarea>
+				<div class="permission-actions project-note-actions">
+					<span class="project-note-hint">Ctrl/Cmd+Shift+N</span>
+					<button type="button" class="permission-btn" id="project-note-close">Close</button>
 				</div>
 			</div>
 		</div>

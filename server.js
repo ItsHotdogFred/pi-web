@@ -1,4 +1,4 @@
-import { DEFAULT_CWD, PI_ACP_ARGS, PI_ACP_COMMAND, PORT } from "./src/config.js";
+import { DEFAULT_CWD, HOST, PI_ACP_ARGS, PI_ACP_COMMAND, PORT } from "./src/config.js";
 import { createAppServer } from "./src/server/createServer.js";
 
 const { server } = createAppServer();
@@ -13,8 +13,8 @@ server.on("error", (err) => {
 	process.exit(1);
 });
 
-server.listen(PORT, () => {
-	console.log(`pi-web listening on http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+	console.log(`pi-web listening on http://${HOST}:${PORT}`);
 	console.log(`default project cwd: ${DEFAULT_CWD}`);
 	console.log(`pi-acp: ${PI_ACP_COMMAND} ${PI_ACP_ARGS.join(" ")}`);
 });

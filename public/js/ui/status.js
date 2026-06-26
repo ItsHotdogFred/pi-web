@@ -8,8 +8,20 @@ import {
 	chatInputEl,
 } from "../dom/elements.js";
 import { renderContextUsage } from "../context/dial.js";
+import { dismissSplash, setSplashStatus } from "./splash.js";
 
 export function setStatus(state, detail = "") {
+	const splashLabels = {
+		connecting: "Connecting to Pi…",
+		loading_history: "Loading session…",
+		error: detail || "Connection failed",
+	};
+	if (state === "ready" || state === "error") {
+		dismissSplash();
+	} else if (splashLabels[state]) {
+		setSplashStatus(splashLabels[state]);
+	}
+
 	for (const el of [statusEl, chatStatusEl]) {
 		el.className = `connection-status status-${state}`;
 		const labelEl = el.querySelector(".status-label");

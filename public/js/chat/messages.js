@@ -1,6 +1,7 @@
 import { app } from "../state/store.js";
 import { $, messagesEl, inputEl, chatInputEl } from "../dom/elements.js";
 import { animateEnter } from "../utils/animation.js";
+import { escapeHtml } from "../utils/format.js";
 import { renderMarkdown } from "../utils/markdown.js";
 import { resetContextUsage } from "../context/dial.js";
 import { clearChangedFiles, resetPlanPanel } from "./tools.js";
@@ -34,7 +35,7 @@ export function addUserMessage(text, images = []) {
 		? `<div class="msg-images">${images
 				.map(
 					(image) =>
-						`<img src="${image.previewUrl || `data:${image.mimeType};base64,${image.data}`}" alt="${image.name || "Attached image"}" />`,
+						`<img src="${image.previewUrl || `data:${image.mimeType};base64,${image.data}`}" alt="${escapeHtml(image.name || "Attached image")}" />`,
 				)
 				.join("")}</div>`
 		: "";
@@ -66,6 +67,34 @@ export function addSystemMessage(kind, label, html) {
 	return article;
 }
 
+const MARKDOWN_RENDER_DELAY_MS = 75;
+
+let markdownRenderScheduled = false;
+let markdownRenderTimer = null;
+const pendingMarkdownBlocks = new Map();
+
+export function flushMarkdownRender() {
+	if (markdownRenderTimer !== null) {
+		clearTimeout(markdownRenderTimer);
+		markdownRenderTimer = null;
+	}
+	markdownRenderScheduled = false;
+	if (pendingMarkdownBlocks.size === 0) return;
+	for (const [block, getText] of pendingMarkdownBlocks) {
+		const content = block.querySelector(".msg-content");
+		if (content?.isConnected) content.innerHTML = renderMarkdown(getText());
+	}
+	pendingMarkdownBlocks.clear();
+	scrollToBottom();
+}
+
+function scheduleMarkdownRender(block, getTextFn) {
+	pendingMarkdownBlocks.set(block, getTextFn);
+	if (markdownRenderScheduled) return;
+	markdownRenderScheduled = true;
+	markdownRenderTimer = setTimeout(flushMarkdownRender, MARKDOWN_RENDER_DELAY_MS);
+}
+
 function ensureThoughtBlock() {
 	if (app.thoughtBlock) return app.thoughtBlock;
 	app.thoughtBlock = addSystemMessage("thought", "Thinking", "");
@@ -76,11 +105,11 @@ function ensureThoughtBlock() {
 export function appendThoughtChunk(text) {
 	const block = ensureThoughtBlock();
 	app.thoughtText += text;
-	block.querySelector(".msg-content").innerHTML = renderMarkdown(app.thoughtText);
-	scrollToBottom();
+	scheduleMarkdownRender(block, () => app.thoughtText);
 }
 
 export function finalizeThoughtBlock() {
+	flushMarkdownRender();
 	app.thoughtBlock = null;
 	app.thoughtText = "";
 }
@@ -96,11 +125,11 @@ function ensureAssistantBlock() {
 export function appendAssistantChunk(text) {
 	const block = ensureAssistantBlock();
 	app.assistantText += text;
-	block.querySelector(".msg-content").innerHTML = renderMarkdown(app.assistantText);
-	scrollToBottom();
+	scheduleMarkdownRender(block, () => app.assistantText);
 }
 
 export function finalizeAssistantTurn() {
+	flushMarkdownRender();
 	finalizeThoughtBlock();
 	app.assistantBlock = null;
 	app.assistantText = "";
