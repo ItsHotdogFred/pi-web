@@ -159,6 +159,61 @@ function isStartupInfo(text) {
 	return typeof text === "string" && text.includes("## Skills") && text.includes("## Extensions");
 }
 
+function couldBeStartupPartial(buffer) {
+	if (buffer.includes("## Skills") && !buffer.includes("## Extensions")) return true;
+	for (const marker of ["## Skills", "## Extensions"]) {
+		for (let i = 1; i < marker.length; i++) {
+			if (buffer.endsWith(marker.slice(0, i))) return true;
+		}
+	}
+	return false;
+}
+
+function createStartupInfoFilter() {
+	let buffer = "";
+	let startupInfoSkipped = false;
+	let bufferedChunks = 0;
+	const maxStartupBufferChunks = 8;
+
+	return {
+		reset() {
+			buffer = "";
+			startupInfoSkipped = false;
+			bufferedChunks = 0;
+		},
+		filter(text) {
+			if (!text) return null;
+			if (startupInfoSkipped) return text;
+			buffer += text;
+			bufferedChunks++;
+			if (isStartupInfo(buffer)) {
+				startupInfoSkipped = true;
+				buffer = "";
+				bufferedChunks = 0;
+				return null;
+			}
+			if (buffer.includes("## Skills")) {
+				startupInfoSkipped = true;
+				buffer = "";
+				bufferedChunks = 0;
+				return null;
+			}
+			if (bufferedChunks >= maxStartupBufferChunks) {
+				startupInfoSkipped = true;
+				const out = buffer;
+				buffer = "";
+				bufferedChunks = 0;
+				return out;
+			}
+			if (couldBeStartupPartial(buffer)) return null;
+			const out = buffer;
+			buffer = "";
+			bufferedChunks = 0;
+			return out;
+		},
+	};
+}
+
 function spawnPiAcp(cwd) {
 	const child = spawn(PI_ACP_COMMAND, PI_ACP_ARGS, {
 		cwd,
@@ -1089,6 +1144,7 @@ function updateToWireEvents(update, toolTracker) {
 		}
 		case "agent_thought_chunk": {
 			if (update.content?.type === "text" && update.content.text) {
+				if (isStartupInfo(update.content.text)) return [];
 				return [{ type: "thought", text: update.content.text }];
 			}
 			return [];
@@ -1207,20 +1263,29 @@ function forwardDefaultsUpdate(update, ws) {
 	}
 }
 
-function forwardSessionUpdate(update, ws, { slimTools = false, toolTracker = null } = {}) {
+function forwardSessionUpdate(update, ws, { slimTools = false, toolTracker = null, startupFilter = null } = {}) {
 	switch (update.sessionUpdate) {
 		case "user_message_chunk":
 			forwardUserMessageChunk(update, ws);
 			break;
 		case "agent_message_chunk":
 			if (update.content?.type === "text" && update.content.text) {
-				if (isStartupInfo(update.content.text)) break;
-				sendJson(ws, { type: "chunk", text: update.content.text });
+				const text = startupFilter
+					? startupFilter.filter(update.content.text)
+					: isStartupInfo(update.content.text)
+						? null
+						: update.content.text;
+				if (text != null) sendJson(ws, { type: "chunk", text });
 			}
 			break;
 		case "agent_thought_chunk":
 			if (update.content?.type === "text" && update.content.text) {
-				sendJson(ws, { type: "thought", text: update.content.text });
+				const text = startupFilter
+					? startupFilter.filter(update.content.text)
+					: isStartupInfo(update.content.text)
+						? null
+						: update.content.text;
+				if (text != null) sendJson(ws, { type: "thought", text });
 			}
 			break;
 		case "tool_call":
@@ -1418,8 +1483,10 @@ class PiSession {
 		this.pendingModelId = null;
 		this.cwd = DEFAULT_CWD;
 		this.toolTracker = createToolCallTracker();
+		this.startupFilter = createStartupInfoFilter();
 		this.cachedNewSession = null;
 		this.cachedNewSessionPromise = null;
+		this.hiddenSessionIds = new Set();
 		this.historyCache = new Map();
 		this.historyCachePromises = new Map();
 		this.preloadChain = Promise.resolve();
@@ -1512,10 +1579,20 @@ class PiSession {
 		clearTimeout(this.contextRefreshTimer);
 		this.contextRefreshTimer = null;
 		this.cachedNewSessionPromise = null;
+		this.hiddenSessionIds.clear();
 		this.historyCache.clear();
 		this.historyCachePromises.clear();
 		this.preloadChain = Promise.resolve();
 		this.sessionFileIndex = new Map();
+	}
+
+	visibleSessions(sessions) {
+		const activeId = this.session?.sessionId;
+		return (sessions ?? []).filter((session) => {
+			if (!session?.sessionId) return false;
+			if (session.sessionId === activeId) return true;
+			return !this.hiddenSessionIds.has(session.sessionId);
+		});
 	}
 
 	invalidateHistoryCache(sessionId) {
@@ -1573,6 +1650,7 @@ class PiSession {
 			try {
 				const session = await this.ctx.buildSession(this.cwd).start();
 				if (!this.closed && !this.cachedNewSession) {
+					this.hiddenSessionIds.add(session.sessionId);
 					this.cachedNewSession = session;
 				} else {
 					session.dispose();
@@ -1637,6 +1715,7 @@ class PiSession {
 			try {
 				this.replayHandler = replayDefaults;
 				probe = await this.ctx.buildSession(this.cwd).start();
+				this.hiddenSessionIds.add(probe.sessionId);
 				sendModelsFromConfigOptions(this.ws, probe.newSessionResponse.configOptions);
 				await this.drainProbeDefaults(probe);
 				this.defaultsFetched = true;
@@ -1694,6 +1773,7 @@ class PiSession {
 		this.pumpPromise = null;
 		this.busy = false;
 		this.toolTracker.reset();
+		this.startupFilter.reset();
 	}
 
 	async connectAgent() {
@@ -1725,7 +1805,7 @@ class PiSession {
 			}),
 			getSessionFileIndex(this.cwd),
 		]);
-		const sessions = listResponse.sessions ?? [];
+		const sessions = this.visibleSessions(listResponse.sessions ?? []);
 		sendJson(this.ws, { type: "sessions", sessions });
 
 		this.sessionFileIndex = sessionFileIndex;
@@ -1826,6 +1906,7 @@ class PiSession {
 
 		sendJson(this.ws, { type: "clear", ...meta });
 		this.toolTracker.reset();
+		this.startupFilter.reset();
 
 		if (cached?.wireEvents?.length) {
 			sendJson(this.ws, { type: "status", state: "loading_history", ...meta });
@@ -1899,11 +1980,13 @@ class PiSession {
 		await this.disposeActiveSession();
 		sendJson(this.ws, { type: "clear" });
 		this.toolTracker.reset();
+		this.startupFilter.reset();
 
 		let cached = false;
 		if (this.cachedNewSession) {
 			this.session = this.cachedNewSession;
 			this.cachedNewSession = null;
+			this.hiddenSessionIds.delete(this.session.sessionId);
 			cached = true;
 			sendModelsFromConfigOptions(this.ws, this.session.newSessionResponse.configOptions);
 		} else {
@@ -1931,9 +2014,9 @@ class PiSession {
 			const listResponse = await this.ctx.request(acp.methods.agent.session.list, {
 				cwd: this.cwd,
 			});
-			let sessions = listResponse.sessions ?? [];
+			let sessions = this.visibleSessions(listResponse.sessions ?? []);
 			const activeId = this.session?.sessionId;
-			if (activeId && !sessions.some((session) => session.sessionId === activeId)) {
+			if (activeId && sessions.length === 0 && !this.busy) {
 				sessions = [
 					{
 						sessionId: activeId,
@@ -2023,7 +2106,10 @@ class PiSession {
 			try {
 				const message = await activeSession.nextUpdate();
 				if (message.kind === "session_update") {
-					forwardSessionUpdate(message.update, this.ws, { toolTracker: this.toolTracker });
+					forwardSessionUpdate(message.update, this.ws, {
+						toolTracker: this.toolTracker,
+						startupFilter: this.startupFilter,
+					});
 					if (this.busy && message.update.sessionUpdate !== "usage_update") {
 						this.scheduleContextRefresh(400);
 					}

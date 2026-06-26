@@ -7,6 +7,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "desktop": "node desktop/launcher.cjs",
+    "desktop:build": "powershell -ExecutionPolicy Bypass -File scripts/build-desktop.ps1",
+    "desktop:launcher": "powershell -ExecutionPolicy Bypass -File scripts/rebuild-launcher.ps1",
+    "setup:kimchi": "node scripts/setup-kimchi-for-pi.mjs",
     "postinstall": "patch-package"
   },
   "dependencies": {
@@ -15,5 +19,8 @@
     "patch-package": "^8.0.1",
     "pi-acp": "^0.0.31",
     "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "resedit": "^3.0.2"
   }
 }

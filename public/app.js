@@ -601,7 +601,9 @@ const toolCards = new Map();
 let connectionState = "connecting";
 let gotReady = false;
 let startupBuffer = "";
-let startupSuppressed = false;
+let startupInfoSkipped = false;
+let suppressStartupDump = false;
+let startupBufferChunks = 0;
 let creatingSession = false;
 let awaitingNewAgentSession = false;
 let freshDashboardSession = false;
@@ -851,14 +853,49 @@ function isPiStartupDump(text) {
 	return text.includes("## Skills") && text.includes("## Extensions");
 }
 
+function couldBeStartupPartial(buffer) {
+	if (buffer.includes("## Skills") && !buffer.includes("## Extensions")) return true;
+	for (const marker of ["## Skills", "## Extensions"]) {
+		for (let i = 1; i < marker.length; i++) {
+			if (buffer.endsWith(marker.slice(0, i))) return true;
+		}
+	}
+	return false;
+}
+
+function resetStartupSuppression() {
+	startupBuffer = "";
+	startupInfoSkipped = false;
+	suppressStartupDump = false;
+	startupBufferChunks = 0;
+}
+
 function shouldSkipStartupContent(text) {
-	if (connectionState !== "connecting") return false;
-	if (startupSuppressed) return true;
+	if (!suppressStartupDump && connectionState !== "connecting") return false;
+	if (startupInfoSkipped) return false;
 	startupBuffer += text;
+	startupBufferChunks++;
 	if (isPiStartupDump(startupBuffer)) {
-		startupSuppressed = true;
+		startupInfoSkipped = true;
+		startupBuffer = "";
+		startupBufferChunks = 0;
 		return true;
 	}
+	if (startupBuffer.includes("## Skills")) {
+		startupInfoSkipped = true;
+		startupBuffer = "";
+		startupBufferChunks = 0;
+		return true;
+	}
+	if (startupBufferChunks >= 8) {
+		startupInfoSkipped = true;
+		startupBuffer = "";
+		startupBufferChunks = 0;
+		return false;
+	}
+	if (couldBeStartupPartial(startupBuffer)) return true;
+	startupBuffer = "";
+	startupBufferChunks = 0;
 	return false;
 }
 
@@ -1763,6 +1800,7 @@ function upsertSession(entry) {
 
 function openSession(id) {
 	if (id === sessionId && currentView === "chat") return;
+	if (busy && id !== sessionId) return;
 	awaitingNewAgentSession = false;
 	freshDashboardSession = false;
 	pendingDashboardPrompt = null;
@@ -2079,6 +2117,7 @@ function renderPlanPanel(entries) {
 
 	let panel = activePlanPanel;
 	if (!panel?.isConnected) {
+		finalizeThoughtBlock();
 		panel = document.createElement("article");
 		panel.className = "msg msg-plan plan-panel";
 		panel.innerHTML = `<span class="msg-label">Plan</span><ol class="plan-list"></ol>`;
@@ -2213,34 +2252,17 @@ function renderFileContext() {
 	}
 }
 
-function reorderTurnEvents(events) {
-	const result = [];
-	let turn = [];
-
-	const flushTurn = () => {
-		if (!turn.length) return;
-		const userEvents = turn.filter((e) => e.type === "user_chunk" || e.type === "user");
-		const toolEvents = turn.filter((e) => e.type === "tool");
-		const thoughtEvents = turn.filter((e) => e.type === "thought");
-		const chunkEvents = turn.filter((e) => e.type === "chunk");
-		const planEvents = turn.filter((e) => e.type === "plan");
-		const rest = turn.filter(
-			(e) => !["user_chunk", "user", "tool", "thought", "chunk", "plan"].includes(e.type),
-		);
-		result.push(...userEvents, ...thoughtEvents, ...toolEvents, ...chunkEvents, ...planEvents, ...rest);
-		turn = [];
-	};
-
+function mergeConsecutiveHistoryEvents(events) {
+	const merged = [];
 	for (const event of events) {
-		if (event.type === "user_chunk" || event.type === "user") {
-			flushTurn();
-			result.push(event);
+		const prev = merged[merged.length - 1];
+		if (event.type === "thought" && prev?.type === "thought") {
+			prev.text = `${prev.text ?? ""}${event.text ?? ""}`;
 			continue;
 		}
-		turn.push(event);
+		merged.push({ ...event });
 	}
-	flushTurn();
-	return result;
+	return merged;
 }
 
 function applyHistoryEvent(event) {
@@ -2286,7 +2308,7 @@ function applyHistoryBatch(events) {
 	if (!Array.isArray(events) || events.length === 0) return;
 	loadingHistory = true;
 	batchHistoryMode = true;
-	for (const event of reorderTurnEvents(events)) applyHistoryEvent(event);
+	for (const event of mergeConsecutiveHistoryEvents(events)) applyHistoryEvent(event);
 	flushUserMessage();
 	finalizeAssistantTurn();
 	batchHistoryMode = false;
@@ -2367,6 +2389,7 @@ function finalizeThoughtBlock() {
 
 function ensureAssistantBlock() {
 	if (assistantBlock) return assistantBlock;
+	finalizeThoughtBlock();
 	assistantBlock = addSystemMessage("assistant", "", "");
 	assistantText = "";
 	return assistantBlock;
@@ -2651,6 +2674,7 @@ function syncSubagentToolCard(state) {
 }
 
 function createToolCard(id) {
+	finalizeThoughtBlock();
 	const card = document.createElement("article");
 	card.className = "tool-card";
 	card.dataset.toolId = id;
@@ -2896,7 +2920,7 @@ function connect() {
 			case "session":
 				sessionId = msg.sessionId ?? null;
 				creatingSession = false;
-				if (sessionId) {
+				if (sessionId && !(pendingDashboardPrompt && msg.title == null)) {
 					const entry = {
 						sessionId,
 						title: msg.title ?? null,
@@ -2929,6 +2953,10 @@ function connect() {
 			case "clear":
 				clearChat();
 				loadingHistory = false;
+				startupBuffer = "";
+				startupInfoSkipped = false;
+				startupBufferChunks = 0;
+				suppressStartupDump = true;
 				break;
 
 			case "context":
@@ -2951,7 +2979,8 @@ function connect() {
 					gotReady = true;
 					connectionState = "ready";
 					startupBuffer = "";
-					startupSuppressed = false;
+					startupInfoSkipped = false;
+					startupBufferChunks = 0;
 					setStatus("ready");
 					setBusy(false);
 					sessionId = msg.sessionId ?? null;
@@ -2969,8 +2998,8 @@ function connect() {
 					setStatus("loading_history");
 				} else if (msg.state === "connecting") {
 					connectionState = "connecting";
-					startupBuffer = "";
-					startupSuppressed = false;
+					resetStartupSuppression();
+					suppressStartupDump = true;
 					setStatus("connecting");
 				} else if (msg.state === "error") {
 					if (pendingProjectPath) {
@@ -3029,6 +3058,7 @@ function connect() {
 			case "done":
 				finalizeAssistantTurn();
 				contextCompactPending = false;
+				resetStartupSuppression();
 				setStatus("ready");
 				setBusy(false);
 				renderSessions();
