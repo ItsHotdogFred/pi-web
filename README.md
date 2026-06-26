@@ -43,20 +43,23 @@ pi-web is the boring fix: paste what you have, drop images into the composer, re
 No React. No Vite. No `npm run build` before you can type a prompt.
 
 ```
-Browser (HTML/CSS/JS)  ←WebSocket→  server.js  ←stdio ACP→  pi-acp  →  pi
+Browser (public/)  ←WebSocket→  server.js → src/  ←stdio ACP→  pi-acp  →  Pi
 ```
 
 | | |
 |---|---|
-| **Dashboard** | Home composer, recent sessions, generative session art (aurora / identicon / flow — click a card to cycle) |
-| **Chat** | Streaming markdown, thinking blocks, tool cards with live status |
+| **Dashboard** | Home composer, prompt activity heatmap, recent activity feed, generative session art (aurora / identicon / flow — click a card to cycle) |
+| **Sidebar** | Search and quick-open recent agents for the current project |
+| **Chat** | Streaming markdown, thinking blocks, tool cards with live status, agent plan blocks |
 | **Sessions** | List, switch, and resume Pi sessions for the current project |
 | **Projects** | Switch folders from the header; recents stored in localStorage |
 | **Models** | Searchable picker synced with Pi's configured providers |
 | **Commands** | `/` palette for Pi slash commands and extensions |
-| **Context dial** | Token usage and breakdown (system, skills, project context, conversation) |
+| **Context dial** | Token usage and breakdown (system, skills, project context, conversation), plus a one-click compact action |
 | **Attachments** | Drop or attach images in the composer |
-| **File context** | Collapsible list of files touched in the current session |
+| **File context** | Collapsible list of files touched in the current session, with open-in-editor links (VS Code, Cursor, Zed) |
+| **Permissions** | Approve or deny tool calls in a modal before Pi runs them |
+| **Notifications** | Optional browser alerts when Pi finishes a turn while the tab is in the background |
 
 Everything runs locally. The browser talks to your machine only. One pi-acp process per tab.
 
@@ -86,7 +89,11 @@ Open [http://localhost:3847](http://localhost:3847).
 To aim Pi at a specific repo on startup:
 
 ```bash
+# macOS / Linux
 PI_CWD=/path/to/your/project npm start
+
+# Windows (PowerShell)
+$env:PI_CWD="C:\path\to\your\project"; npm start
 ```
 
 That was it.
@@ -99,10 +106,11 @@ That was it.
 |----------|---------|--------------|
 | `PORT` | `3847` | HTTP + WebSocket port |
 | `PI_CWD` | current directory | Default project folder |
-| `PI_ACP_COMMAND` | `node` | Command that launches pi-acp |
+| `PI_ACP_COMMAND` | Node binary running the server | Command that launches pi-acp |
 | `PI_ACP_ARGS` | bundled pi-acp entry | Arguments (space-separated) |
 | `PI_ACP_SHELL` | `1` on Windows when using `npx` | Spawn pi-acp through a shell |
 | `PI_ACP_ENABLE_EXTENSION_COMMANDS` | `1` | Expose extension slash commands like `/tldr` |
+| `PI_WEB_AUTO_APPROVE` | off | Auto-approve tool permissions without a modal |
 
 Examples:
 
@@ -115,21 +123,26 @@ PI_ACP_COMMAND=pi-acp PI_ACP_ARGS= npm start
 
 # Extension command misbehaving in the browser UI
 PI_ACP_ENABLE_EXTENSION_COMMANDS=0 npm start
+
+# Skip the permission modal (local dev only)
+PI_WEB_AUTO_APPROVE=1 npm start
 ```
 
 ---
 
 ## How it works
 
-1. You open the page. `server.js` serves static files and accepts a WebSocket on `/ws`.
+1. You open the page. `server.js` boots the HTTP server in `src/`, serves static files from `public/`, and accepts a WebSocket on `/ws`.
 2. On connect, the server spawns `pi-acp` and speaks [ACP](https://agentclientprotocol.com) over stdio.
 3. pi-acp drives Pi in RPC mode — same tools, same skills, same sessions as the CLI.
 4. Streaming updates (text, tools, thoughts, usage) get normalized and pushed to the browser as JSON.
-5. Session history can load from Pi's on-disk JSONL (fast path) or replay through ACP (fallback).
+5. Session history loads from Pi's on-disk JSONL when possible (fast path) or replays through ACP (fallback).
 
-**Lazy where it helps:** a new session is precached in the background so "New Agent" feels instant. Recent sessions preload from disk before you click them.
+**Lazy where it helps:** a new session is precached in the background so "New Agent" feels instant. Recent sessions preload from disk before you click them. Models and slash commands are fetched in a hidden probe session so the dashboard is ready before your first prompt.
 
-**Lazy where it doesn't:** tool permissions are auto-approved in this prototype. Fine for local dev; don't expose pi-web to the internet and walk away.
+**Safe by default:** tool permissions open a modal in the browser. Approve once, always allow, or deny. Set `PI_WEB_AUTO_APPROVE=1` only for trusted local use. Don't expose pi-web to the internet and walk away.
+
+**Patched dependency:** `npm install` applies a small `patch-package` patch to bundled `pi-acp` for turn lifecycle and extension-command behavior.
 
 ---
 
@@ -139,7 +152,21 @@ PI_ACP_ENABLE_EXTENSION_COMMANDS=0 npm start
 npm run dev
 ```
 
-Restarts the bridge on file changes (`node --watch`). Frontend edits are plain static files — refresh the browser.
+Restarts the bridge on file changes (`node --watch`). Frontend edits are plain static ES modules — refresh the browser.
+
+```
+server.js              entry point
+src/                   Node server (HTTP, WebSocket, ACP bridge)
+  server/              HTTP + WebSocket setup
+  ws/                  per-tab Pi session lifecycle
+  acp/                 pi-acp process + ACP client
+  http/                REST helpers
+  analytics/           context + contribution stats
+public/                static UI
+  app.js               bootstraps modules under public/js/
+  js/                  dashboard, chat, composer, wire protocol, etc.
+patches/               pi-acp patches applied on npm install
+```
 
 Local profiling scripts (optional, not part of the runtime):
 
@@ -147,6 +174,17 @@ Local profiling scripts (optional, not part of the runtime):
 node bench-startup.mjs      # Pi RPC startup timings
 node bench-extensions.mjs   # per-extension load cost
 ```
+
+---
+
+## HTTP API
+
+Read-only helpers for the dashboard UI. Both accept an optional `cwd` query param.
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /api/git?cwd=...` | Project path, repo name, current branch, branch list |
+| `GET /api/contributions?cwd=...&refresh=1` | Prompt activity heatmap data from local session history |
 
 ---
 
@@ -160,22 +198,36 @@ Client → server:
 { "type": "prompt", "text": "Explain this repo" }
 { "type": "prompt", "text": "What's wrong here?", "images": [{ "mimeType": "image/png", "data": "<base64>" }] }
 { "type": "cancel" }
-{ "type": "switch_session", "sessionId": "..." }
+{ "type": "compact", "instructions": "optional custom compact instructions" }
+{ "type": "switch_session", "sessionId": "...", "requestId": "optional-correlation-id" }
 { "type": "new_session" }
 { "type": "set_model", "value": "claude-sonnet-4-20250514" }
 { "type": "set_cwd", "path": "/absolute/path/to/project" }
+{ "type": "permission_response", "requestId": "...", "optionId": "...", "cancelled": false }
+{ "type": "fetch_defaults" }
 ```
 
 Server → client (subset):
 
 ```json
 { "type": "sessions", "sessions": [{ "sessionId": "...", "title": "...", "updatedAt": "..." }] }
+{ "type": "session", "sessionId": "...", "title": "...", "cwd": "..." }
 { "type": "status", "state": "ready", "sessionId": "...", "cwd": "..." }
+{ "type": "status", "state": "loading_history" }
+{ "type": "status", "state": "busy" }
 { "type": "project", "path": "/abs/path", "project": "my-app", "branch": "main", "branches": ["main"] }
+{ "type": "models", "current": "...", "models": [{ "id": "...", "name": "..." }] }
+{ "type": "commands", "commands": [{ "name": "/compact", "description": "..." }] }
+{ "type": "history", "events": [{ "type": "chunk", "text": "..." }] }
+{ "type": "clear" }
 { "type": "chunk", "text": "Hello" }
 { "type": "thought", "text": "Let me check the router..." }
+{ "type": "user_chunk", "text": "Earlier user message" }
 { "type": "tool", "event": "start", "title": "read", "toolName": "read", "status": "pending" }
+{ "type": "plan", "entries": [{ "title": "...", "status": "pending" }] }
 { "type": "context", "used": 42000, "size": 128000, "percent": 32.8, "breakdown": [...] }
+{ "type": "permission_request", "requestId": "...", "tool": { "title": "bash" }, "options": [{ "optionId": "...", "name": "Allow once" }] }
+{ "type": "permission", "tool": "bash", "choice": "Allow once" }
 { "type": "done", "stopReason": "end_turn" }
 { "type": "error", "message": "..." }
 ```
@@ -194,13 +246,16 @@ You can. pi-web is for when the terminal isn't where you're looking — or when 
 Because the point is to open a tab and go. Static files, one WebSocket, done.
 
 **Can I run this on a remote server?**
-Technically yes; practically don't, unless you add auth and stop auto-approving tool permissions. pi-web trusts whoever can open the port.
+Technically yes; practically don't, unless you add auth and keep tool permissions gated. pi-web trusts whoever can open the port.
 
 **Does it replace Cursor / Claude Code / Codex?**
 Different job. Those are full IDE integrations. pi-web is Pi — your skills, your extensions, your sessions — in a browser window you already have open.
 
 **The context dial says 90%. Now what?**
-Start a new session for the next task, or let Pi compact. The dial tells you before the model starts forgetting, not after.
+Click **Compact now** in the dial popover, start a new session for the next task, or run `/compact` from the command palette. The dial tells you before the model starts forgetting, not after.
+
+**Why does pi-web ask before running tools?**
+So you can see what Pi is about to do before it touches your filesystem or shell. Set `PI_WEB_AUTO_APPROVE=1` if you want the old hands-off behavior on a trusted machine.
 
 ---
 

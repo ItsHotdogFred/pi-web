@@ -1,0 +1,56 @@
+export const $ = (id) => document.getElementById(id);
+
+export const todayListEl = $("today-list");
+export const activityFeedEl = $("activity-feed");
+export const contribGraphCountEl = $("contrib-graph-count");
+export const contribGraphWeeksEl = $("contrib-graph-weeks");
+export const contribGraphMonthsEl = $("contrib-graph-months");
+export const contribGraphLearnEl = $("contrib-graph-learn");
+export const contribGraphNoteEl = $("contrib-graph-note");
+export const dashboardViewEl = $("dashboard-view");
+export const chatViewEl = $("chat-view");
+export const chatAreaEl = $("chat-area");
+export const messagesEl = $("messages");
+export const statusEl = $("status");
+export const chatStatusEl = $("chat-status");
+export const projectNameEl = $("project-name");
+export const branchNameEl = $("branch-name");
+export const chatTitleEl = $("chat-title");
+export const composerEl = $("composer");
+export const inputEl = $("input");
+export const sendEl = $("send");
+export const chatComposerEl = $("chat-composer");
+export const chatInputEl = $("chat-input");
+export const cancelEl = $("cancel");
+export const fileContextEl = $("file-context");
+export const sidebarEl = $("sidebar");
+export const searchBtnEl = $("search-btn");
+export const sidebarSearchEl = $("sidebar-search");
+export const searchInputEl = $("search-input");
+export const commandsHintEl = $("commands-hint");
+export const inlineCommandsEl = $("inline-commands");
+export const inlineCommandsListEl = $("inline-commands-list");
+export const chatInlineCommandsEl = $("chat-inline-commands");
+export const chatInlineCommandsListEl = $("chat-inline-commands-list");
+export const fileInputEl = $("file-input");
+export const attachBtnEl = $("attach-btn");
+export const modelLabelEl = $("model-label");
+
+export const contextDialWrapEl = $("context-dial-wrap");
+export const contextDialTriggerEl = $("context-dial-trigger");
+export const contextPopoverEl = $("context-popover");
+export const contextBreakdownEl = $("context-breakdown");
+export const contextPopoverSummaryEl = $("context-popover-summary");
+export const contextActionsEl = $("context-actions");
+export const contextCompactBtnEl = $("context-compact-btn");
+export const contextNewSessionBtnEl = $("context-new-session-btn");
+
+export const permissionModalEl = $("permission-modal");
+export const permissionDialogEl = $("permission-dialog");
+export const permissionTitleEl = $("permission-title");
+export const permissionDetailsEl = $("permission-details");
+export const permissionActionsEl = $("permission-actions");
+
+export const notificationPromptModalEl = $("notification-prompt-modal");
+export const notificationPromptEnableEl = $("notification-prompt-enable");
+export const notificationPromptDismissEl = $("notification-prompt-dismiss");

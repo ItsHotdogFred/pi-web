@@ -1,0 +1,51 @@
+import { app } from "../state/store.js";
+import { inputEl, chatInputEl } from "../dom/elements.js";
+import { showView } from "../ui/views.js";
+import { addUserMessage } from "../chat/messages.js";
+import { getAttachmentsFor, clearAttachments } from "../composer/attachments.js";
+import { resizeTextarea } from "../composer/textarea.js";
+import { newSession } from "../dashboard/sessions.js";
+
+export function deliverPrompt(trimmed, images, fromChat = false) {
+	const target = fromChat ? chatInputEl : inputEl;
+
+	app.lastPrompt = trimmed || (images.length ? `[${images.length} image${images.length === 1 ? "" : "s"}]` : "");
+	showView("chat");
+	addUserMessage(trimmed, images);
+
+	target.value = "";
+	resizeTextarea(target);
+	clearAttachments(target);
+
+	app.ws.send(
+		JSON.stringify({
+			type: "prompt",
+			text: trimmed,
+			images: images.map(({ mimeType, data }) => ({ mimeType, data })),
+		}),
+	);
+}
+
+export function sendPrompt(text, fromChat = false) {
+	const target = fromChat ? chatInputEl : inputEl;
+	const trimmed = text.trim();
+	const attachments = [...getAttachmentsFor(target)];
+	if ((!trimmed && attachments.length === 0) || !app.ws || app.ws.readyState !== WebSocket.OPEN || app.busy) return;
+
+	const images = attachments.map(({ name, mimeType, data, previewUrl }) => ({
+		name,
+		mimeType,
+		data,
+		previewUrl,
+	}));
+
+	if (!fromChat && (!app.sessionId || !app.freshDashboardSession)) {
+		app.pendingDashboardPrompt = { text: trimmed, images };
+		app.awaitingNewAgentSession = true;
+		if (!app.creatingSession) newSession();
+		return;
+	}
+
+	app.freshDashboardSession = false;
+	deliverPrompt(trimmed, images, fromChat);
+}
