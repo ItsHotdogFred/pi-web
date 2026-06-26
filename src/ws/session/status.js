@@ -46,4 +46,5 @@ export function clearSessionCaches(session) {
 	session.historyCachePromises.clear();
 	session.preloadChain = Promise.resolve();
 	session.sessionFileIndex = new Map();
+	session.defaultsFetched = false;
 }

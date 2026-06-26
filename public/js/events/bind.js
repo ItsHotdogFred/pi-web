@@ -11,6 +11,7 @@ import {
 	searchInputEl,
 	commandsHintEl,
 	attachBtnEl,
+	fileRefBtnEl,
 	fileInputEl,
 	contribGraphLearnEl,
 	contribGraphNoteEl,
@@ -24,6 +25,11 @@ import { reconnect } from "../wire/websocket.js";
 import { resizeTextarea } from "../composer/textarea.js";
 import { addImageAttachment, handleImagePaste } from "../composer/attachments.js";
 import { updateInlineCommands, updateChatSlashCommands, openCommands, closeCommands } from "../commands/palette.js";
+import {
+	updateInlineFileReferences,
+	updateChatFileReferences,
+	openFileReferences,
+} from "../composer/references.js";
 import { renderFileContext } from "../chat/tools.js";
 import { toggleProjectNote } from "../project/note.js";
 
@@ -58,6 +64,7 @@ export function bindEvents() {
 		resizeTextarea(inputEl);
 		setBusy(app.busy);
 		updateInlineCommands();
+		updateInlineFileReferences();
 	});
 
 	chatInputEl.addEventListener("keydown", (e) => {
@@ -75,6 +82,7 @@ export function bindEvents() {
 	chatInputEl.addEventListener("input", () => {
 		resizeTextarea(chatInputEl);
 		updateChatSlashCommands();
+		updateChatFileReferences();
 	});
 
 	$("nav-dashboard").addEventListener("click", () => {
@@ -126,9 +134,19 @@ export function bindEvents() {
 		fileInputEl.click();
 	});
 
+	fileRefBtnEl?.addEventListener("click", () => {
+		app.attachTarget = inputEl;
+		openFileReferences(inputEl);
+	});
+
 	$("chat-attach-btn")?.addEventListener("click", () => {
 		app.attachTarget = chatInputEl;
 		fileInputEl.click();
+	});
+
+	$("chat-file-ref-btn")?.addEventListener("click", () => {
+		app.attachTarget = chatInputEl;
+		openFileReferences(chatInputEl);
 	});
 
 	fileInputEl.addEventListener("change", () => {

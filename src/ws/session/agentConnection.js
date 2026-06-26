@@ -6,7 +6,7 @@ import { spawnPiAcp } from "../../acp/process.js";
 import { getSessionFileIndex } from "../../sessions/sessionFiles.js";
 import { sendJson } from "../../wire/send.js";
 import { cancelAllPendingPermissions } from "./permissions.js";
-import { warmSessionCaches } from "./precache.js";
+import { ensureCachedNewSession, warmSessionCaches } from "./precache.js";
 import { clearSessionCaches, sendReady } from "./status.js";
 import { visibleSessions } from "./visibility.js";
 import { disposeActiveSession } from "./dispose.js";
@@ -57,6 +57,7 @@ export async function connectAgent(session) {
 		},
 	});
 	session.protocolVersion = init.protocolVersion;
+	void ensureCachedNewSession(session);
 
 	const [listResponse, sessionFileIndex] = await Promise.all([
 		session.ctx.request(acp.methods.agent.session.list, {

@@ -11,11 +11,13 @@ import { syncGitContext } from "./git.js";
 import { loadContributions } from "../dashboard/contributions.js";
 import { reloadProjectNoteIfOpen } from "./note.js";
 import { closeAllDropdowns } from "../ui/dropdowns.js";
+import { invalidateProjectFiles } from "../composer/references.js";
 
 export function setProjectName(path) {
 	app.cwd = path || "";
 	app.gitInfo.project = basename(path);
 	app.gitInfo.path = path || app.gitInfo.path;
+	invalidateProjectFiles();
 	syncGitContext();
 	void loadContributions();
 	reloadProjectNoteIfOpen();
@@ -123,6 +125,8 @@ export function resetForProjectSwitch(nextCwd) {
 	app.models = [];
 	app.currentModelId = null;
 	app.pendingModelSelection = null;
+	app.defaultsRequested = false;
+	app.projectSwitchPending = true;
 	app.creatingSession = false;
 	app.awaitingNewAgentSession = false;
 	app.freshDashboardSession = false;

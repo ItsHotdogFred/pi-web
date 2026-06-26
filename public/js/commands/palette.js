@@ -11,6 +11,7 @@ import { animateEnter } from "../utils/animation.js";
 import { escapeHtml } from "../utils/format.js";
 import { requestAgentDefaults } from "../notifications/prompt.js";
 import { getActiveInput } from "../chat/messages.js";
+import { closeFileReferences } from "../composer/references.js";
 
 function filteredCommands(filter) {
 	const q = filter.trim().toLowerCase().replace(/^\//, "");
@@ -54,6 +55,7 @@ function renderCommandsInto(listEl, filter, onSelect) {
 function updateSlashCommands(targetInput, containerEl, listEl) {
 	const show = targetInput.value.startsWith("/");
 	const wasHidden = !containerEl.classList.contains("is-open");
+	if (show) closeFileReferences();
 	containerEl.classList.toggle("is-open", show);
 	containerEl.setAttribute("aria-hidden", String(!show));
 	if (!show) {
@@ -91,6 +93,7 @@ export function closeCommands() {
 	inlineCommandsEl.setAttribute("aria-hidden", "true");
 	chatInlineCommandsEl.classList.remove("is-open");
 	chatInlineCommandsEl.setAttribute("aria-hidden", "true");
+	closeFileReferences();
 	const target = getActiveInput();
 	if (target.value.startsWith("/") && !target.value.slice(1).includes(" ")) {
 		target.value = "";

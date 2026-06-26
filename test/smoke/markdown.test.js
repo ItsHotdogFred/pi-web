@@ -5,7 +5,7 @@ import { installDom } from "./helpers/dom.js";
 
 installDom();
 
-const { renderMarkdown } = await import("../../public/js/utils/markdown.js");
+const { renderMarkdown, enhanceAssistantCodeBlocks } = await import("../../public/js/utils/markdown.js");
 
 describe("renderMarkdown", () => {
 	before(() => {
@@ -33,5 +33,18 @@ describe("renderMarkdown", () => {
 			html,
 			"&lt;script&gt;alert(1)&lt;/script&gt;<br>line two",
 		);
+	});
+
+	it("wraps fenced code blocks with a copy button", () => {
+		window.marked = marked;
+
+		const container = document.createElement("div");
+		container.innerHTML = renderMarkdown("```js\nconst x = 1;\n```");
+		enhanceAssistantCodeBlocks(container);
+
+		const block = container.querySelector(".code-block");
+		assert.ok(block);
+		assert.ok(block.querySelector(".code-copy-btn"));
+		assert.match(block.querySelector("code").textContent, /const x = 1/);
 	});
 });

@@ -2,7 +2,7 @@ import { app } from "../state/store.js";
 import { $, messagesEl, inputEl, chatInputEl } from "../dom/elements.js";
 import { animateEnter } from "../utils/animation.js";
 import { escapeHtml } from "../utils/format.js";
-import { renderMarkdown } from "../utils/markdown.js";
+import { enhanceAssistantCodeBlocks, renderMarkdown } from "../utils/markdown.js";
 import { resetContextUsage } from "../context/dial.js";
 import { clearChangedFiles, resetPlanPanel } from "./tools.js";
 import { clearPendingUserMessage } from "./history.js";
@@ -62,6 +62,7 @@ export function addSystemMessage(kind, label, html) {
 	article.className = `msg msg-${kind}`;
 	const labelHtml = label ? `<span class="msg-label">${label}</span>` : "";
 	article.innerHTML = `${labelHtml}<div class="msg-content">${html}</div>`;
+	if (kind === "assistant") enhanceAssistantCodeBlocks(article.querySelector(".msg-content"));
 	appendChatNode(article);
 	animateEnter(article, "anim-fade-up");
 	return article;
@@ -82,7 +83,9 @@ export function flushMarkdownRender() {
 	if (pendingMarkdownBlocks.size === 0) return;
 	for (const [block, getText] of pendingMarkdownBlocks) {
 		const content = block.querySelector(".msg-content");
-		if (content?.isConnected) content.innerHTML = renderMarkdown(getText());
+		if (!content?.isConnected) continue;
+		content.innerHTML = renderMarkdown(getText());
+		if (block.classList.contains("msg-assistant")) enhanceAssistantCodeBlocks(content);
 	}
 	pendingMarkdownBlocks.clear();
 	scrollToBottom();

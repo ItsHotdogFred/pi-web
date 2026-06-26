@@ -28,33 +28,17 @@ export async function drainProbeDefaults(session, probe, timeoutMs = 3000) {
 	}
 }
 
-export async function fetchAgentDefaults(session) {
-	if (session.defaultsFetched || session.defaultsFetchPromise || session.closed || !session.ctx) {
-		return;
+export async function primeAgentDefaults(session, probe) {
+	const replayDefaults = (params) => {
+		forwardDefaultsUpdate(params.update, session.ws);
+	};
+
+	session.replayHandler = replayDefaults;
+	try {
+		sendModelsFromConfigOptions(session.ws, probe.newSessionResponse.configOptions);
+		await drainProbeDefaults(session, probe);
+		session.defaultsFetched = true;
+	} finally {
+		session.replayHandler = null;
 	}
-
-	session.defaultsFetchPromise = (async () => {
-		const replayDefaults = (params) => {
-			forwardDefaultsUpdate(params.update, session.ws);
-		};
-
-		let probe = null;
-		try {
-			session.replayHandler = replayDefaults;
-			probe = await session.ctx.buildSession(session.cwd).start();
-			session.hiddenSessionIds.add(probe.sessionId);
-			sendModelsFromConfigOptions(session.ws, probe.newSessionResponse.configOptions);
-			await drainProbeDefaults(session, probe);
-			session.defaultsFetched = true;
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			console.error("[pi-web] failed to fetch agent defaults:", message);
-		} finally {
-			session.replayHandler = null;
-			probe?.dispose();
-			session.defaultsFetchPromise = null;
-		}
-	})();
-
-	await session.defaultsFetchPromise;
 }

@@ -1,5 +1,6 @@
 import { DEFAULT_CWD } from "../config.js";
 import { getContributions } from "../analytics/contributions.js";
+import { listProjectFiles } from "../projects/files.js";
 import { getGitInfo, resolveProjectPath } from "../projects/git.js";
 import { readProjectNote, writeProjectNote } from "../projects/note.js";
 
@@ -62,6 +63,20 @@ export async function serveContributions(req, res) {
 	}
 }
 
+export async function serveProjectFiles(req, res) {
+	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+	const requested = url.searchParams.get("cwd");
+
+	try {
+		const cwd = requested ? await resolveProjectPath(requested) : DEFAULT_CWD;
+		const files = await listProjectFiles(cwd);
+		writeJson(res, 200, { cwd, files });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		writeJson(res, 400, { message });
+	}
+}
+
 export async function serveProjectNote(req, res) {
 	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 	const requested = url.searchParams.get("cwd");
@@ -115,6 +130,11 @@ export async function handleApiRequest(pathname, req, res) {
 
 	if (pathname === "/api/note") {
 		await serveProjectNote(req, res);
+		return true;
+	}
+
+	if (pathname === "/api/files") {
+		await serveProjectFiles(req, res);
 		return true;
 	}
 

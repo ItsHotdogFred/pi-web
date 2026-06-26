@@ -66,7 +66,7 @@ async function buildSessionFileIndex(cwd) {
 				await handle.close();
 				const firstLine = buf.subarray(0, bytesRead).toString("utf8").split("\n")[0]?.trim();
 				const header = parseSessionHeader(firstLine);
-				if (header?.cwd === cwd) index.set(header.sessionId, file);
+				if (header?.cwd && resolve(header.cwd) === resolve(cwd)) index.set(header.sessionId, file);
 			} catch {
 				// ignore unreadable files
 			}

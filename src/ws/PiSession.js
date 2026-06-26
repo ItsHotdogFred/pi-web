@@ -2,7 +2,7 @@ import { DEFAULT_CWD } from "../config.js";
 import { createStartupInfoFilter, createToolCallTracker } from "../wire/acpEvents.js";
 import { closeSession, start } from "./session/agentConnection.js";
 import { cancel, compactSession, handlePrompt } from "./session/commands.js";
-import { fetchAgentDefaults } from "./session/defaults.js";
+import { fetchAgentDefaults } from "./session/precache.js";
 import { setModel } from "./session/model.js";
 import { setProjectPath } from "./session/project.js";
 import { resolvePermissionResponse } from "./session/permissions.js";

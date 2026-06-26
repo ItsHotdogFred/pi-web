@@ -261,7 +261,9 @@ export function connect(isReconnect = false) {
 					app.sessionId = msg.sessionId ?? null;
 					if (app.cwd) rememberProject(app.cwd);
 					renderSessions();
-					scheduleAgentDefaultsFetch();
+					renderContextUsage();
+					scheduleAgentDefaultsFetch({ immediate: app.projectSwitchPending });
+					app.projectSwitchPending = false;
 					setTimeout(maybePromptForNotifications, 1000);
 					finishSessionSwitchAnimation(msg.requestId);
 					if (resumeSessionId && app.ws?.readyState === WebSocket.OPEN) {

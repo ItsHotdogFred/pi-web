@@ -122,12 +122,16 @@ export function renderContextUsage() {
 }
 
 export function setContextUsage(next) {
-	app.contextUsage = {
-		used: next?.used ?? null,
-		size: next?.size ?? null,
-		percent: next?.percent ?? null,
-		breakdown: Array.isArray(next?.breakdown) ? next.breakdown : [],
-	};
+	const prev = app.contextUsage;
+	const used = next?.used ?? prev.used ?? null;
+	const size = next?.size ?? prev.size ?? null;
+	let percent = next?.percent ?? prev.percent ?? null;
+	const breakdown =
+		Array.isArray(next?.breakdown) && next.breakdown.length > 0 ? next.breakdown : (prev.breakdown ?? []);
+	if (percent == null && used != null && size != null && size > 0) {
+		percent = (used / size) * 100;
+	}
+	app.contextUsage = { used, size, percent, breakdown };
 	renderContextUsage();
 }
 

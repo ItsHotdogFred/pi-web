@@ -122,6 +122,7 @@ export function showView(view, { animate = true } = {}) {
 					app.viewTransitioning = false;
 					if (view === "dashboard") renderActivityFeed();
 					if (view === "dashboard") void loadContributions();
+					renderContextUsage();
 				},
 				{ once: true },
 			);

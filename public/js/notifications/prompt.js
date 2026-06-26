@@ -59,13 +59,17 @@ export function requestAgentDefaults() {
 	app.ws.send(JSON.stringify({ type: "fetch_defaults" }));
 }
 
-export function scheduleAgentDefaultsFetch() {
+export function scheduleAgentDefaultsFetch({ immediate = false } = {}) {
 	if (app.defaultsRequested || app.models.length > 0) return;
+	if (immediate) {
+		requestAgentDefaults();
+		return;
+	}
 	const run = () => requestAgentDefaults();
 	if ("requestIdleCallback" in window) {
-		requestIdleCallback(run, { timeout: 5000 });
+		requestIdleCallback(run, { timeout: 500 });
 	} else {
-		setTimeout(run, 2500);
+		setTimeout(run, 100);
 	}
 }
 

@@ -55,8 +55,10 @@ Browser (public/)  ←WebSocket→  server.js → src/  ←stdio ACP→  pi-acp 
 | **Projects** | Switch folders from the header; recents stored in localStorage |
 | **Models** | Searchable picker synced with Pi's configured providers |
 | **Commands** | `/` palette for Pi slash commands and extensions |
+| **File references** | Type `@` or click the file button to insert `@path` or `@folder/` into your prompt |
 | **Context dial** | Token usage and breakdown (system, skills, project context, conversation), plus a one-click compact action |
 | **Attachments** | Drop or attach images in the composer |
+| **Code blocks** | Copy button on assistant fenced code blocks |
 | **File context** | Collapsible list of files touched in the current session, with open-in-editor links (VS Code, Cursor, Zed) |
 | **Permissions** | Approve or deny tool calls in a modal before Pi runs them |
 | **Notifications** | Optional browser alerts when Pi finishes a turn while the tab is in the background |
@@ -102,6 +104,22 @@ piweb
 ```
 
 That starts pi-web with the folder you ran the command in as the default project. Same env vars as `npm start` (`PORT`, `PI_CWD`, etc.) still apply.
+
+CLI options:
+
+```bash
+piweb --help          # usage, composer tips (@ files, / commands)
+piweb --version       # installed version
+piweb --port 3848     # different port
+piweb --cwd /path     # default project folder
+```
+
+After pulling updates, reinstall the global command so it picks up new UI and server changes:
+
+```bash
+cd pi-web
+npm install -g .
+```
 
 To aim Pi at a specific repo on startup:
 
@@ -201,12 +219,14 @@ node bench-extensions.mjs   # per-extension load cost
 
 ## HTTP API
 
-Read-only helpers for the dashboard UI. Both accept an optional `cwd` query param.
+Read-only helpers for the dashboard UI. All accept an optional `cwd` query param.
 
 | Endpoint | Returns |
 |----------|---------|
 | `GET /api/git?cwd=...` | Project path, repo name, current branch, branch list |
 | `GET /api/contributions?cwd=...&refresh=1` | Prompt activity heatmap data from local session history |
+| `GET /api/files?cwd=...` | Project-relative file and folder paths for `@` reference picker |
+| `GET /api/note?cwd=...` | Project note content (`.pi-web/note.md`) |
 
 ---
 

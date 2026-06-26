@@ -1225,12 +1225,15 @@ input {
 	border-radius: 10px;
 	background: transparent;
 	overflow: hidden;
+	visibility: hidden;
+	pointer-events: none;
 	transform-origin: top center;
 	transition:
 		grid-template-rows 0.26s cubic-bezier(0.33, 1, 0.68, 1),
 		margin-bottom 0.26s cubic-bezier(0.33, 1, 0.68, 1),
 		border-color 0.2s ease,
-		background-color 0.2s ease;
+		background-color 0.2s ease,
+		visibility 0s linear 0.26s;
 }
 
 .inline-commands.is-open {
@@ -1238,15 +1241,28 @@ input {
 	margin-bottom: 0.5rem;
 	border-color: var(--border-subtle);
 	background: #0f0f0f;
+	visibility: visible;
+	pointer-events: auto;
+	transition:
+		grid-template-rows 0.26s cubic-bezier(0.33, 1, 0.68, 1),
+		margin-bottom 0.26s cubic-bezier(0.33, 1, 0.68, 1),
+		border-color 0.2s ease,
+		background-color 0.2s ease,
+		visibility 0s;
 }
 
 .inline-commands-list {
 	margin: 0;
-	padding: 0.25rem;
+	padding: 0;
 	list-style: none;
 	max-height: 220px;
-	overflow-y: auto;
+	overflow: hidden;
 	min-height: 0;
+}
+
+.inline-commands.is-open .inline-commands-list {
+	padding: 0.25rem;
+	overflow-y: auto;
 }
 
 .inline-commands-list.anim-fade-down {
@@ -1282,6 +1298,12 @@ input {
 .inline-commands-list .command-desc {
 	font-size: 0.74rem;
 	color: var(--muted);
+}
+
+.inline-commands-list .file-ref-kind {
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	font-size: 0.65rem;
 }
 
 .model-menu .dropdown-item {
@@ -1758,6 +1780,43 @@ input {
 	margin: 0.4rem 0;
 }
 
+.msg-content .code-block {
+	overflow: hidden;
+	border-radius: 8px;
+	background: #111;
+	border: 1px solid var(--border-subtle);
+}
+
+.msg-content .code-block-header {
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	padding: 0.2rem 0.3rem;
+	background: #161616;
+	border-bottom: 1px solid var(--border-subtle);
+}
+
+.msg-content .code-copy-btn {
+	width: 1.75rem;
+	height: 1.75rem;
+}
+
+.msg-content .code-copy-label {
+	display: none;
+	font-size: 0.68rem;
+	font-weight: 600;
+	font-family: var(--font-sans, system-ui, sans-serif);
+	letter-spacing: 0.01em;
+}
+
+.msg-content .code-copy-btn.copied .code-copy-icon {
+	display: none;
+}
+
+.msg-content .code-copy-btn.copied .code-copy-label {
+	display: block;
+}
+
 .msg-content pre {
 	overflow: auto;
 	padding: 0.65rem 0.75rem;
@@ -1765,6 +1824,13 @@ input {
 	background: #111;
 	border: 1px solid var(--border-subtle);
 	font-size: 0.82rem;
+}
+
+.msg-content .code-block pre {
+	margin: 0;
+	border: none;
+	border-radius: 0;
+	background: transparent;
 }
 
 .msg-content code {
@@ -1776,6 +1842,26 @@ input {
 	padding: 0.12rem 0.35rem;
 	border-radius: 4px;
 	background: rgba(255, 255, 255, 0.06);
+}
+
+.msg-content table {
+	border-collapse: collapse;
+	width: 100%;
+	margin: 0.65rem 0;
+	font-size: inherit;
+}
+
+.msg-content th,
+.msg-content td {
+	border: 1px solid var(--border);
+	padding: 0.35rem 0.55rem;
+	text-align: left;
+	vertical-align: top;
+}
+
+.msg-content th {
+	background: rgba(255, 255, 255, 0.04);
+	font-weight: 600;
 }
 
 /* ── Tool cards ── */

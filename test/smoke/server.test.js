@@ -96,6 +96,19 @@ describe("HTTP smoke", () => {
 		assert.equal(typeof body.cwd, "string");
 	});
 
+	test("GET /api/files returns 200 JSON with file entries", async () => {
+		const res = await fetch(`${baseUrl}/api/files`);
+		assert.equal(res.status, 200);
+		assert.match(res.headers.get("content-type") ?? "", /application\/json/);
+		const body = await res.json();
+		assert.equal(typeof body.cwd, "string");
+		assert.ok(Array.isArray(body.files));
+		if (body.files.length > 0) {
+			assert.equal(typeof body.files[0].path, "string");
+			assert.ok(body.files[0].type === "file" || body.files[0].type === "dir");
+		}
+	});
+
 	test("PUT /api/note saves and GET returns updated content", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "pi-web-note-api-"));
 		try {

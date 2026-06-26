@@ -7,7 +7,7 @@ import {
 	updateToWireEvents,
 } from "../../wire/acpEvents.js";
 import { sendJson } from "../../wire/send.js";
-import { scheduleContextRefresh } from "./contextRefresh.js";
+import { emitContextUsage, resetContextRefreshState, scheduleContextRefresh } from "./contextRefresh.js";
 import { getHistoryCache, historyCacheKey } from "./historyCache.js";
 import { withSessionLoad } from "./loadMutex.js";
 import { applyPendingModel } from "./model.js";
@@ -20,6 +20,7 @@ import { pumpUpdates } from "./streaming.js";
 export { disposeActiveSession } from "./dispose.js";
 
 export async function loadSession(session, sessionId, { replay = true, requestId = null, generation = null } = {}) {
+	resetContextRefreshState(session);
 	const meta = requestId == null ? {} : { requestId };
 	const isStale = () => generation != null && generation !== session.sessionLoadGeneration;
 	const cached = replay ? await getHistoryCache(session, sessionId) : null;
@@ -93,12 +94,14 @@ export async function loadSession(session, sessionId, { replay = true, requestId
 		});
 		sendReady(session, meta);
 		void applyPendingModel(session);
-		void refreshSessions(session);
-		scheduleContextRefresh(session, 0);
+		await refreshSessions(session);
+		void emitContextUsage(session);
 	});
 }
 
 export async function createSession(session) {
+	resetContextRefreshState(session);
+
 	if (session.cachedNewSessionPromise) {
 		await session.cachedNewSessionPromise.catch(() => {});
 	}
@@ -132,9 +135,9 @@ export async function createSession(session) {
 	});
 	sendReady(session);
 	void applyPendingModel(session);
-	void refreshSessions(session);
+	await refreshSessions(session);
+	void emitContextUsage(session);
 	void ensureCachedNewSession(session);
-	scheduleContextRefresh(session, 0);
 }
 
 export async function refreshSessions(session) {
@@ -157,7 +160,7 @@ export async function refreshSessions(session) {
 		session.sessionFileIndex = await getSessionFileIndex(session.cwd);
 		sendJson(session.ws, { type: "sessions", sessions });
 		warmSessionCaches(session, sessions);
-		scheduleContextRefresh(session, 0);
+		scheduleContextRefresh(session, 100);
 	} catch {
 		// ignore list errors during refresh
 	}

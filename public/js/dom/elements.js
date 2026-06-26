@@ -30,10 +30,15 @@ export const searchInputEl = $("search-input");
 export const commandsHintEl = $("commands-hint");
 export const inlineCommandsEl = $("inline-commands");
 export const inlineCommandsListEl = $("inline-commands-list");
+export const inlineFileRefsEl = $("inline-file-refs");
+export const inlineFileRefsListEl = $("inline-file-refs-list");
 export const chatInlineCommandsEl = $("chat-inline-commands");
 export const chatInlineCommandsListEl = $("chat-inline-commands-list");
+export const chatInlineFileRefsEl = $("chat-inline-file-refs");
+export const chatInlineFileRefsListEl = $("chat-inline-file-refs-list");
 export const fileInputEl = $("file-input");
 export const attachBtnEl = $("attach-btn");
+export const fileRefBtnEl = $("file-ref-btn");
 export const modelLabelEl = $("model-label");
 
 export const contextDialWrapEl = $("context-dial-wrap");
