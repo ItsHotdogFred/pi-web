@@ -187,6 +187,17 @@ function userContentToWireEvents(content, messageId) {
 	return events;
 }
 
+function shouldPreserveToolResultMessage(message) {
+	if (!message || typeof message !== "object") return false;
+	if (message.toolName === "subagent") return true;
+	if (message.toolName === "todo") {
+		const details = message.details;
+		return details && typeof details === "object" && Array.isArray(details.tasks);
+	}
+	const details = message.details;
+	return details && typeof details === "object" && Array.isArray(details.results);
+}
+
 function toolResultToText(result) {
 	if (!result) return "";
 	const details = result.details;
@@ -275,15 +286,13 @@ export function parseSessionJsonl(content) {
 				kind: toolName,
 			});
 			const outputText = toolResultToText(message);
-			const hasSubagentDetails =
-				message.toolName === "subagent" ||
-				(message.details && typeof message.details === "object" && Array.isArray(message.details.results));
+			const preserveMessage = shouldPreserveToolResultMessage(message);
 			events.push({
 				type: "tool",
 				event: "update",
 				id: toolCallId,
 				status: message.isError ? "failed" : "completed",
-				rawOutput: hasSubagentDetails
+				rawOutput: preserveMessage
 					? truncateWire(message)
 					: outputText
 						? truncateWire(outputText)

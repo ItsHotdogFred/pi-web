@@ -113,6 +113,22 @@ describe("parseSessionJsonl", () => {
 		assert.equal(toolUpdate.status, "completed");
 		assert.equal(toolUpdate.rawOutput, "src/wire/send.js\nsrc/wire/acpEvents.js");
 	});
+
+	it("preserves todo toolResult details for replay", () => {
+		const jsonl = [
+			'{"type":"message","id":"msg-assistant-1","message":{"role":"assistant","content":[{"type":"toolCall","id":"call-todo-1","name":"todo","arguments":{"action":"create","subject":"Ship todos"}}]}}',
+			'{"type":"message","id":"msg-tool-1","message":{"role":"toolResult","toolCallId":"call-todo-1","toolName":"todo","content":[{"type":"text","text":"Created #1: Ship todos (pending)"}],"details":{"action":"create","params":{"action":"create","subject":"Ship todos"},"tasks":[{"id":1,"subject":"Ship todos","status":"pending"}],"nextId":2}}}',
+		].join("\n");
+
+		const events = parseSessionJsonl(jsonl);
+		const toolStart = events.find((e) => e.event === "start" && e.id === "call-todo-1");
+		const toolUpdate = events.find((e) => e.event === "update" && e.id === "call-todo-1");
+		assert.ok(toolStart);
+		assert.equal(toolStart.toolName, "todo");
+		assert.ok(toolUpdate);
+		assert.ok(toolUpdate.rawOutput.details);
+		assert.equal(toolUpdate.rawOutput.details.tasks[0].subject, "Ship todos");
+	});
 });
 
 describe("updateToWireEvents", () => {

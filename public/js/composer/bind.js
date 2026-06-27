@@ -6,6 +6,7 @@ import { sendPrompt } from "../wire/send.js";
 import { updateSlashCommandsFor } from "../commands/palette.js";
 import { updateFileReferencesForScope, openFileReferences } from "./references.js";
 import { resizeTextarea } from "./textarea.js";
+import { syncComposerHighlight } from "./highlight.js";
 import { handleImagePaste } from "./attachments.js";
 
 function bindComposerScope(scope) {
@@ -32,6 +33,8 @@ function bindComposerScope(scope) {
 		handleImagePaste(e, inputEl);
 	});
 
+	inputEl.addEventListener("scroll", () => syncComposerHighlight(inputEl));
+
 	let pickerFrame = null;
 	inputEl.addEventListener("input", () => {
 		resizeTextarea(inputEl);
@@ -56,6 +59,8 @@ function bindComposerScope(scope) {
 		app.ui.attachTarget = inputEl;
 		openFileReferences(inputEl);
 	});
+
+	syncComposerHighlight(inputEl);
 }
 
 export function bindAllComposers() {

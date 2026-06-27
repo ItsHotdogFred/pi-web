@@ -108,14 +108,25 @@
 						</div>
 					</header>
 
-					<div class="dashboard-body">
+					<div class="dashboard-composer-section">
 						<div id="dashboard-inline-pickers"></div>
 
-						<div id="dashboard-composer-mount"></div>
+						<div class="dashboard-buddy-zone">
+							<div class="pi-buddy" id="pi-buddy">
+								<p class="pi-buddy-speech hidden" id="pi-buddy-speech" role="status" aria-live="polite"></p>
+								<button type="button" class="pi-buddy-btn" id="pi-buddy-btn" aria-label="Pi buddy — click for advice">
+									<canvas id="pi-buddy-canvas" width="60" height="36" aria-hidden="true"></canvas>
+								</button>
+							</div>
+							<div id="dashboard-composer-mount"></div>
+						</div>
 
 						<button type="button" class="commands-hint" id="commands-hint">
 							Try Commands <kbd>/</kbd>
 						</button>
+					</div>
+
+					<div class="dashboard-body">
 
 						<section class="contrib-graph" id="contrib-graph" aria-label="Prompt activity">
 							<div class="contrib-graph-header">
@@ -181,6 +192,16 @@
 							</div>
 
 							<div class="chat-composer-wrap">
+						<div class="todo-panel hidden" id="todo-panel" aria-label="Agent todos">
+							<div class="todo-panel-header">
+								<span class="todo-panel-icon" id="todo-panel-icon" aria-hidden="true">○</span>
+								<span class="todo-panel-title" id="todo-panel-title">Todos</span>
+								<span class="todo-panel-count" id="todo-panel-count"></span>
+							</div>
+							<ul class="todo-list" id="todo-list"></ul>
+							<div class="todo-panel-more hidden" id="todo-panel-more"></div>
+						</div>
+
 						<div class="file-context hidden" id="file-context">
 							<button type="button" class="file-context-header" id="file-context-toggle" aria-expanded="true">
 								<svg class="file-context-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -229,7 +250,10 @@
 
 		<template id="composer-form-template">
 			<form class="composer-box">
-				<textarea rows="2" autocomplete="off" spellcheck="true"></textarea>
+				<div class="composer-input-wrap">
+					<div class="composer-input-highlight" aria-hidden="true"></div>
+					<textarea rows="2" autocomplete="off" spellcheck="false"></textarea>
+				</div>
 				<div class="attachment-previews hidden" aria-label="Attached images"></div>
 				<div class="composer-bar">
 					<div class="composer-left"></div>

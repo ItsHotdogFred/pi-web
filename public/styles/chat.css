@@ -171,6 +171,124 @@
 	background: rgba(255, 255, 255, 0.06);
 }
 
+.todo-panel {
+	max-width: 820px;
+	margin: 0 auto 0.55rem;
+	border: 1px solid var(--border-subtle);
+	border-radius: 10px;
+	background: #0d0d0d;
+	padding: 0.65rem 0.85rem 0.7rem;
+}
+
+.todo-panel--active {
+	border-color: rgba(251, 146, 60, 0.35);
+	box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.08);
+}
+
+.todo-panel-header {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	font-size: 0.78rem;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	color: var(--muted);
+}
+
+.todo-panel--active .todo-panel-header,
+.todo-panel-title--active {
+	color: var(--orange);
+}
+
+.todo-panel-icon {
+	font-size: 0.7rem;
+	line-height: 1;
+}
+
+.todo-panel-count {
+	font-weight: 500;
+	color: var(--muted-dim);
+}
+
+.todo-list {
+	list-style: none;
+	margin: 0.5rem 0 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+}
+
+.todo-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.5rem;
+	padding: 0.35rem 0.45rem;
+	border-radius: 7px;
+	background: rgba(255, 255, 255, 0.02);
+}
+
+.todo-item--in_progress {
+	background: rgba(251, 146, 60, 0.06);
+	border: 1px solid rgba(251, 146, 60, 0.22);
+}
+
+.todo-item--completed {
+	opacity: 0.72;
+}
+
+.todo-item--completed .todo-subject {
+	color: var(--muted);
+	text-decoration: line-through;
+	text-decoration-color: rgba(255, 255, 255, 0.18);
+}
+
+.todo-status {
+	flex-shrink: 0;
+	width: 0.95rem;
+	text-align: center;
+	font-size: 0.82rem;
+	line-height: 1.35;
+	color: var(--muted);
+}
+
+.todo-item--in_progress .todo-status {
+	color: var(--orange);
+}
+
+.todo-item--completed .todo-status {
+	color: var(--green);
+}
+
+.todo-text {
+	flex: 1;
+	min-width: 0;
+	font-size: 0.82rem;
+	line-height: 1.35;
+}
+
+.todo-id {
+	color: var(--muted-dim);
+	font-size: 0.75rem;
+}
+
+.todo-active-form {
+	color: var(--muted);
+	font-size: 0.78rem;
+}
+
+.todo-blocked {
+	color: var(--muted-dim);
+	font-size: 0.75rem;
+}
+
+.todo-panel-more {
+	margin-top: 0.35rem;
+	padding-left: 1.45rem;
+	font-size: 0.75rem;
+	color: var(--muted-dim);
+}
+
 .msg-error {
 	padding: 0.75rem 0;
 	border-left: 2px solid rgba(248, 113, 113, 0.45);

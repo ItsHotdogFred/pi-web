@@ -2,6 +2,7 @@ import { app } from "../state/store.js";
 import { addUserMessage, finalizeAssistantTurn, scrollToBottomAfterLayout } from "./messages.js";
 import { rebuildPromptHistory } from "./promptHistory.js";
 import { ingestEvent } from "./ingestEvent.js";
+import { resetTodoDisplayState } from "./todoPanel.js";
 
 export function clearPendingUserMessage() {
 	app.session.pendingUserMessage = null;
@@ -62,6 +63,7 @@ export function applyHistoryBatch(events) {
 	flushUserMessage();
 	finalizeAssistantTurn();
 	app.session.batchHistoryMode = false;
+	resetTodoDisplayState();
 	rebuildPromptHistory();
 	if (!app.session.activeSessionSwitchRequestId) {
 		scrollToBottomAfterLayout();

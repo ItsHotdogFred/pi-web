@@ -250,16 +250,38 @@
 	box-shadow: 0 0 0 1px #333;
 }
 
+.composer-input-wrap {
+	display: grid;
+}
+
+.composer-input-highlight,
 .composer-box textarea {
+	grid-area: 1 / 1;
 	width: 100%;
 	min-height: 5.5rem;
 	padding: 1rem 1.1rem 0.5rem;
 	border: none;
-	background: transparent;
-	color: var(--text);
-	resize: none;
 	line-height: 1.55;
 	font-size: 0.95rem;
+}
+
+.composer-input-highlight {
+	pointer-events: none;
+	overflow: hidden;
+	white-space: pre-wrap;
+	word-break: break-word;
+	color: var(--text);
+}
+
+.composer-file-ref {
+	color: #60a5fa;
+}
+
+.composer-box textarea {
+	background: transparent;
+	color: transparent;
+	caret-color: var(--text);
+	resize: none;
 	outline: none;
 }
 
@@ -377,6 +399,7 @@
 	background: #121212;
 }
 
+.composer-box--dashboard .composer-input-highlight,
 .composer-box--dashboard textarea {
 	min-height: 2.75rem;
 	padding: 0.85rem 1rem 0.35rem;
@@ -562,11 +585,13 @@
 
 .chat-composer-wrap .composer-box,
 .chat-composer-wrap .file-context,
+.chat-composer-wrap .todo-panel,
 .chat-composer-wrap .inline-commands {
 	max-width: 820px;
 	margin-left: auto;
 	margin-right: auto;
 }
+.composer-box--chat .composer-input-highlight,
 .composer-box--chat textarea {
 	min-height: 3.5rem;
 }

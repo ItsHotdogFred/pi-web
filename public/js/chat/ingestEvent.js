@@ -9,6 +9,7 @@ import {
 import { updateToolCard } from "./toolCard.js";
 import { renderPlanPanel, resetPlanPanel } from "./planPanel.js";
 import { appendUserChunk, flushUserMessage } from "./history.js";
+import { onAgentResponseStart, syncTodoFromTool } from "./todoPanel.js";
 
 export function ingestEvent(event, { mode = "stream" } = {}) {
 	switch (event.type) {
@@ -18,6 +19,7 @@ export function ingestEvent(event, { mode = "stream" } = {}) {
 			break;
 		case "chunk": {
 			if (mode === "history") flushUserMessage();
+			else onAgentResponseStart();
 			const chunkText = event.text ?? "";
 			if (!chunkText || shouldSkipStartupContent(chunkText)) break;
 			if (mode === "history") {
@@ -31,6 +33,7 @@ export function ingestEvent(event, { mode = "stream" } = {}) {
 		}
 		case "thought": {
 			if (mode === "history") flushUserMessage();
+			else onAgentResponseStart();
 			const thoughtText = event.text ?? "";
 			if (!thoughtText || shouldSkipStartupContent(thoughtText)) break;
 			if (mode === "history") {
@@ -46,6 +49,7 @@ export function ingestEvent(event, { mode = "stream" } = {}) {
 			if (mode === "history") flushUserMessage();
 			if (mode === "history") finalizeAssistantTurn();
 			updateToolCard(event);
+			syncTodoFromTool(event);
 			break;
 		case "plan":
 			if (mode === "history") flushUserMessage();

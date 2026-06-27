@@ -39,6 +39,11 @@ export const app = {
 		changedFiles: new Set(),
 		fileDiffs: new Map(),
 		activePlanPanel: null,
+		todos: {
+			tasks: [],
+			nextId: 0,
+			readyToHideCompleted: false,
+		},
 		lastPrompt: "",
 		fileContextCollapsed: false,
 	},

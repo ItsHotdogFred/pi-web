@@ -6,6 +6,7 @@ import { enhanceRenderedMarkdown, renderMarkdown } from "../utils/markdown.js";
 import { resetContextUsage } from "../context/dial.js";
 import { clearChangedFiles } from "./fileContext.js";
 import { resetPlanPanel } from "./planPanel.js";
+import { resetTodoPanel } from "./todoPanel.js";
 import { clearPendingUserMessage } from "./history.js";
 import { clearPromptHistory, registerUserPrompt } from "./promptHistory.js";
 
@@ -25,6 +26,7 @@ function resetChatStreamingState() {
 	app.chat.thoughtBlock = null;
 	app.chat.thoughtText = "";
 	resetPlanPanel();
+	resetTodoPanel();
 }
 
 function scrollLastMessageIntoView() {

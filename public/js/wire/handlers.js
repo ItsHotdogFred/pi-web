@@ -46,6 +46,7 @@ import {
 	notifyTaskComplete,
 } from "../notifications/prompt.js";
 import { deliverPrompt } from "./send.js";
+import { markTodoTurnComplete } from "../chat/todoPanel.js";
 import {
 	getResumeSessionId,
 	clearResumeSessionId,
@@ -234,6 +235,7 @@ function handlePlan(msg) {
 
 function handleDone() {
 	finalizeAssistantTurn();
+	markTodoTurnComplete();
 	app.ui.contextCompactPending = false;
 	resetStartupSuppression();
 	setStatus("ready");

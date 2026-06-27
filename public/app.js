@@ -18,6 +18,7 @@ import { app } from "./js/state/store.js";
 import { initPromptHistory } from "./js/chat/promptHistory.js";
 import { initTabStatus } from "./js/ui/tabStatus.js";
 import { initDiffReview } from "./js/chat/diffReview.js";
+import { initBuddy } from "./js/ui/buddy.js";
 
 initSplash();
 initTabStatus();
@@ -33,6 +34,7 @@ initPermissionModal();
 initNotificationPrompt();
 initProjectNote();
 initDiffReview();
+initBuddy();
 bindEvents();
 initPromptHistory();
 fetchGitInfo();
