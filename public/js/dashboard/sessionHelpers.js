@@ -1,7 +1,7 @@
 import { app } from "../state/store.js";
 import { basename } from "../utils/format.js";
 
-export function sortedSessions() {
+function sortedSessions() {
 	return [...app.session.sessions].sort(
 		(a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime(),
 	);

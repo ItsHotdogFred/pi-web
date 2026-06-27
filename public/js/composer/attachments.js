@@ -7,7 +7,7 @@ export function getAttachmentsFor(target) {
 	return target === chatInputEl ? app.composer.chatAttachments : app.composer.dashboardAttachments;
 }
 
-export function getPreviewContainerFor(target) {
+function getPreviewContainerFor(target) {
 	return target === chatInputEl ? $("chat-attachment-previews") : $("attachment-previews");
 }
 

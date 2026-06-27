@@ -135,7 +135,7 @@ async function loadNoteIntoModal(cwd) {
 	}
 }
 
-export async function openProjectNote() {
+async function openProjectNote() {
 	if (!projectNoteModalEl || !projectNoteInputEl) return;
 
 	const cwd = app.session.cwd || app.project.gitInfo.path;
@@ -153,7 +153,7 @@ export async function openProjectNote() {
 	projectNoteInputEl.focus();
 }
 
-export async function closeProjectNote() {
+async function closeProjectNote() {
 	if (!getProjectNoteModal()?.isOpen()) return;
 	await flushNoteSave();
 	getProjectNoteModal()?.close();
@@ -182,8 +182,4 @@ export function initProjectNote() {
 	projectNoteInputEl?.addEventListener("input", () => {
 		scheduleNoteSave();
 	});
-}
-
-export function isProjectNoteOpen() {
-	return getProjectNoteModal()?.isOpen() ?? false;
 }

@@ -18,7 +18,11 @@ export async function fetchSessionStats() {
 			};
 			if (entry?.updatedAt) {
 				const session = app.session.sessions.find((s) => s.sessionId === sessionId);
-				if (session) session.updatedAt = entry.updatedAt;
+				if (session) {
+					const ts = new Date(entry.updatedAt).getTime();
+					const prevTs = session.updatedAt ? new Date(session.updatedAt).getTime() : 0;
+					if (ts >= prevTs) session.updatedAt = entry.updatedAt;
+				}
 			}
 		}
 		app.session.lineStats = lineStats;

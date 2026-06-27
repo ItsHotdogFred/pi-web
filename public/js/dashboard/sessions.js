@@ -20,11 +20,29 @@ export function renderSessions() {
 	refreshTabBaseTitle();
 }
 
+function mergeUpdatedAt(prev, next) {
+	if (prev) return prev;
+	return next;
+}
+
+export function applySessionList(incoming) {
+	const existingById = new Map(app.session.sessions.map((s) => [s.sessionId, s]));
+	app.session.sessions = incoming.map((entry) => {
+		const prev = existingById.get(entry.sessionId);
+		if (!prev) return entry;
+		const merged = { ...prev, ...entry };
+		if (entry.title == null && prev.title) merged.title = prev.title;
+		merged.updatedAt = mergeUpdatedAt(prev.updatedAt, entry.updatedAt);
+		return merged;
+	});
+}
+
 export function upsertSession(entry) {
 	const idx = app.session.sessions.findIndex((s) => s.sessionId === entry.sessionId);
 	if (idx >= 0) {
 		const merged = { ...app.session.sessions[idx], ...entry };
 		if (entry.title == null && app.session.sessions[idx].title) merged.title = app.session.sessions[idx].title;
+		merged.updatedAt = mergeUpdatedAt(app.session.sessions[idx].updatedAt, entry.updatedAt);
 		app.session.sessions[idx] = merged;
 	} else {
 		app.session.sessions.push(entry);
@@ -40,6 +58,7 @@ export function openSession(id) {
 	app.session.pendingDashboardPrompt = null;
 
 	const switchingSession = app.ui.currentView === "chat" && id !== app.session.sessionId;
+	if (!switchingSession) cancelSessionSwitchAnimation();
 	const requestId = switchingSession ? ++app.session.sessionSwitchRequestId : null;
 	if (switchingSession) {
 		app.session.activeSessionSwitchRequestId = requestId;

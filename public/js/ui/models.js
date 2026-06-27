@@ -18,7 +18,7 @@ function syncModelLabels() {
 	if (chatLabel) chatLabel.textContent = label;
 }
 
-export function filteredModels() {
+function filteredModels() {
 	const q = app.models.searchQuery.trim().toLowerCase();
 	if (!q) return app.models.list;
 	return app.models.list.filter(
@@ -29,7 +29,7 @@ export function filteredModels() {
 	);
 }
 
-export function selectModel(modelId) {
+function selectModel(modelId) {
 	if (!modelId) {
 		closeAllDropdowns();
 		return;
@@ -47,7 +47,7 @@ export function selectModel(modelId) {
 	closeAllDropdowns();
 }
 
-export function renderModelMenuList(listId = "model-menu-list") {
+function renderModelMenuList(listId = "model-menu-list") {
 	const list = $(listId);
 	if (!list) return;
 

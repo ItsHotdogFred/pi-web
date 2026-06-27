@@ -1,4 +1,11 @@
 import { app } from "../state/store.js";
+import {
+	isStartupDump,
+	couldBeStartupPartial,
+	SKILLS_MARKER,
+} from "../shared/startupMarkers.js";
+
+export { couldBeStartupPartial };
 
 const FRIENDLY_TOOL_NAMES = { ffgrep: "grep", fffind: "find", bash: "shell" };
 
@@ -14,7 +21,7 @@ export function stripToolPrefix(name) {
 	return s;
 }
 
-export function parseNameFromRaw(raw) {
+function parseNameFromRaw(raw) {
 	if (raw == null || raw === "") return null;
 	try {
 		const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
@@ -34,7 +41,7 @@ export function normalizeToolName(name) {
 	return FRIENDLY_TOOL_NAMES[stripped] || stripped;
 }
 
-export function isGenericToolName(name) {
+function isGenericToolName(name) {
 	return typeof name === "string" && name.trim().toLowerCase() === "tool";
 }
 
@@ -60,17 +67,7 @@ export function resolveToolName(data) {
 }
 
 export function isPiStartupDump(text) {
-	return text.includes("## Skills") && text.includes("## Extensions");
-}
-
-export function couldBeStartupPartial(buffer) {
-	if (buffer.includes("## Skills") && !buffer.includes("## Extensions")) return true;
-	for (const marker of ["## Skills", "## Extensions"]) {
-		for (let i = 1; i < marker.length; i++) {
-			if (buffer.endsWith(marker.slice(0, i))) return true;
-		}
-	}
-	return false;
+	return isStartupDump(text);
 }
 
 export function resetStartupSuppression() {
@@ -91,7 +88,7 @@ export function shouldSkipStartupContent(text) {
 		app.connection.startupBufferChunks = 0;
 		return true;
 	}
-	if (app.connection.startupBuffer.includes("## Skills")) {
+	if (app.connection.startupBuffer.includes(SKILLS_MARKER)) {
 		app.connection.startupInfoSkipped = true;
 		app.connection.startupBuffer = "";
 		app.connection.startupBufferChunks = 0;

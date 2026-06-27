@@ -11,7 +11,7 @@ export function getPiAgentDir() {
 		: join(homedir(), ".pi", "agent");
 }
 
-export async function getPiSessionsDir() {
+async function getPiSessionsDir() {
 	const agentDir = getPiAgentDir();
 	const settingsPath = join(agentDir, "settings.json");
 	try {

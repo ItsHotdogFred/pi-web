@@ -1,6 +1,6 @@
 import { app } from "../state/store.js";
 import { RECENT_PROJECTS_KEY } from "../config.js";
-import { $, sidebarEl } from "../dom/elements.js";
+import { $ } from "../dom/elements.js";
 import { basename, escapeHtml } from "../utils/format.js";
 import { clearChat } from "../chat/messages.js";
 import { showView } from "../ui/views.js";

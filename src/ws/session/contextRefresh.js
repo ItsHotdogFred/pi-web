@@ -32,7 +32,7 @@ export async function emitContextUsage(session) {
 	}
 }
 
-export async function refreshContextUsage(session) {
+async function refreshContextUsage(session) {
 	const sessionId = session.session?.sessionId;
 	if (!sessionId || session.closed) return;
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { isStartupDump, couldBeStartupPartial, SKILLS_MARKER } from "../../public/js/shared/startupMarkers.js";
 import { sendContextUsage, sendJson, truncateWire } from "./send.js";
 
 function looksLikeToolId(value) {
@@ -107,20 +108,6 @@ export function createToolCallTracker() {
 	};
 }
 
-function isStartupInfo(text) {
-	return typeof text === "string" && text.includes("## Skills") && text.includes("## Extensions");
-}
-
-function couldBeStartupPartial(buffer) {
-	if (buffer.includes("## Skills") && !buffer.includes("## Extensions")) return true;
-	for (const marker of ["## Skills", "## Extensions"]) {
-		for (let i = 1; i < marker.length; i++) {
-			if (buffer.endsWith(marker.slice(0, i))) return true;
-		}
-	}
-	return false;
-}
-
 export function createStartupInfoFilter() {
 	let buffer = "";
 	let startupInfoSkipped = false;
@@ -138,13 +125,13 @@ export function createStartupInfoFilter() {
 			if (startupInfoSkipped) return text;
 			buffer += text;
 			bufferedChunks++;
-			if (isStartupInfo(buffer)) {
+			if (isStartupDump(buffer)) {
 				startupInfoSkipped = true;
 				buffer = "";
 				bufferedChunks = 0;
 				return null;
 			}
-			if (buffer.includes("## Skills")) {
+			if (buffer.includes(SKILLS_MARKER)) {
 				startupInfoSkipped = true;
 				buffer = "";
 				bufferedChunks = 0;
@@ -317,14 +304,14 @@ export function updateToWireEvents(update, toolTracker) {
 		}
 		case "agent_message_chunk": {
 			if (update.content?.type === "text" && update.content.text) {
-				if (isStartupInfo(update.content.text)) return [];
+				if (isStartupDump(update.content.text)) return [];
 				return [{ type: "chunk", text: update.content.text }];
 			}
 			return [];
 		}
 		case "agent_thought_chunk": {
 			if (update.content?.type === "text" && update.content.text) {
-				if (isStartupInfo(update.content.text)) return [];
+				if (isStartupDump(update.content.text)) return [];
 				return [{ type: "thought", text: update.content.text }];
 			}
 			return [];
@@ -384,7 +371,7 @@ export function sendModelsFromConfigOptions(ws, configOptions) {
 	});
 }
 
-export function sendCommands(ws, commands) {
+function sendCommands(ws, commands) {
 	if (!Array.isArray(commands)) return;
 	sendJson(ws, {
 		type: "commands",
@@ -435,7 +422,7 @@ export function forwardSessionUpdate(update, ws, { slimTools = false, toolTracke
 			if (update.content?.type === "text" && update.content.text) {
 				const text = startupFilter
 					? startupFilter.filter(update.content.text)
-					: isStartupInfo(update.content.text)
+					: isStartupDump(update.content.text)
 						? null
 						: update.content.text;
 				if (text != null) sendJson(ws, { type: "chunk", text });
@@ -445,7 +432,7 @@ export function forwardSessionUpdate(update, ws, { slimTools = false, toolTracke
 			if (update.content?.type === "text" && update.content.text) {
 				const text = startupFilter
 					? startupFilter.filter(update.content.text)
-					: isStartupInfo(update.content.text)
+					: isStartupDump(update.content.text)
 						? null
 						: update.content.text;
 				if (text != null) sendJson(ws, { type: "thought", text });

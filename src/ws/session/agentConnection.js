@@ -66,9 +66,8 @@ export async function connectAgent(session) {
 		getSessionFileIndex(session.cwd),
 	]);
 	const sessions = visibleSessions(session, listResponse.sessions ?? []);
-	sendJson(session.ws, { type: "sessions", sessions });
-
 	session.sessionFileIndex = sessionFileIndex;
+	sendJson(session.ws, { type: "sessions", sessions });
 	sendReady(session);
 	void warmSessionCaches(session, sessions);
 }

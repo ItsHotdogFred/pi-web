@@ -18,14 +18,10 @@ export const projectNameEl = $("project-name");
 export const branchNameEl = $("branch-name");
 export const chatTitleEl = $("chat-title");
 
-export let composerEl;
 export let inputEl;
 export let sendEl;
-export let chatComposerEl;
 export let chatInputEl;
 export let cancelEl;
-export let attachBtnEl;
-export let fileRefBtnEl;
 export let modelLabelEl;
 export let contextDialWrapEl;
 export let contextDialTriggerEl;
@@ -37,14 +33,10 @@ export let contextCompactBtnEl;
 export let contextNewSessionBtnEl;
 
 export function refreshDomRefs() {
-	composerEl = $("composer");
 	inputEl = $("input");
 	sendEl = $("send");
-	chatComposerEl = $("chat-composer");
 	chatInputEl = $("chat-input");
 	cancelEl = $("cancel");
-	attachBtnEl = $("attach-btn");
-	fileRefBtnEl = $("file-ref-btn");
 	modelLabelEl = $("model-label");
 	contextDialWrapEl = $("context-dial-wrap");
 	contextDialTriggerEl = $("context-dial-trigger");
@@ -67,7 +59,6 @@ export function refreshDomRefs() {
 
 	projectNoteModalEl = $("project-note-modal");
 	projectNoteBackdropEl = $("project-note-backdrop");
-	projectNoteDialogEl = $("project-note-dialog");
 	projectNoteTitleEl = $("project-note-title");
 	projectNotePathEl = $("project-note-path");
 	projectNoteStatusEl = $("project-note-status");
@@ -103,7 +94,6 @@ export let notificationPromptDismissEl;
 
 export let projectNoteModalEl;
 export let projectNoteBackdropEl;
-export let projectNoteDialogEl;
 export let projectNoteTitleEl;
 export let projectNotePathEl;
 export let projectNoteStatusEl;

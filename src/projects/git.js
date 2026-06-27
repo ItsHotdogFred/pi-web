@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-export async function gitBranch(cwd) {
+async function gitBranch(cwd) {
 	try {
 		const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd });
 		return stdout.trim() || "master";
@@ -14,7 +14,7 @@ export async function gitBranch(cwd) {
 	}
 }
 
-export async function gitBranches(cwd) {
+async function gitBranches(cwd) {
 	try {
 		const { stdout } = await execFileAsync("git", ["branch", "--format=%(refname:short)"], { cwd });
 		const branches = stdout

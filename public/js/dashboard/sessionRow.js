@@ -8,18 +8,6 @@ import {
 } from "./sessionHelpers.js";
 import { openSession } from "./sessions.js";
 
-export function formatLineStats(sessionId) {
-	const stats = app.session.lineStats[sessionId];
-	if (!stats) return null;
-	const added = stats.linesAdded ?? 0;
-	const removed = stats.linesRemoved ?? 0;
-	if (added === 0 && removed === 0) return null;
-	const parts = [];
-	if (added > 0) parts.push(`+${added}`);
-	if (removed > 0) parts.push(`−${removed}`);
-	return parts.join(" ");
-}
-
 function lineStatsHtml(sessionId) {
 	const stats = app.session.lineStats[sessionId];
 	if (!stats) return "";
@@ -45,7 +33,7 @@ async function loadSessionArt() {
 	return sessionArtModule;
 }
 
-export function getSessionDisplayState(session) {
+function getSessionDisplayState(session) {
 	const isActive = session.sessionId === app.session.sessionId;
 	const isRunning = isActive && app.ui.busy;
 	const status = sessionStatus(session, { isActive, isRunning });

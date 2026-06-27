@@ -194,7 +194,6 @@
 	flex-shrink: 0;
 }
 
-.selectors,
 .context-chips {
 	display: flex;
 	align-items: center;
@@ -513,6 +512,7 @@
 
 .chat-area.session-switch-hidden {
 	opacity: 0;
+	visibility: hidden;
 	pointer-events: none;
 }
 

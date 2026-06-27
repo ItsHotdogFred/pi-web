@@ -118,7 +118,7 @@ function createPrimaryAction(scope) {
 	return btn;
 }
 
-export function mountComposerForm(mountEl, scopeKey) {
+function mountComposerForm(mountEl, scopeKey) {
 	const scope = COMPOSER_SCOPES[scopeKey];
 	const template = document.getElementById("composer-form-template");
 	if (!mountEl || !template || !scope) return;
@@ -159,7 +159,7 @@ export function mountAllComposers() {
 	mountComposerForm(document.getElementById("chat-composer-mount"), "chat");
 }
 
-export function mountInlinePickers(mountEl, scope) {
+function mountInlinePickers(mountEl, scope) {
 	if (!mountEl) return;
 	const commands = createInlinePicker(scope, "commands");
 	const fileRefs = createInlinePicker(scope, "fileRefs");

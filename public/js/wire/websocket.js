@@ -2,7 +2,7 @@ import { app } from "../state/store.js";
 import { wsUrl } from "../config.js";
 import { clearPendingUserMessage } from "../chat/history.js";
 import { setStatus, setBusy } from "../ui/status.js";
-import { isStaleSwitchMessage } from "../ui/views.js";
+import { isStaleSwitchMessage, cancelSessionSwitchAnimation } from "../ui/views.js";
 import { clearPermissionRequests } from "../permissions/modal.js";
 import { dispatchMessage } from "./handlers.js";
 import {
@@ -92,6 +92,7 @@ export function connect(isReconnect = false) {
 
 	app.connection.ws.addEventListener("close", () => {
 		if (generation !== connectionGeneration) return;
+		cancelSessionSwitchAnimation();
 		clearPermissionRequests();
 		setBusy(false);
 		incrementReconnectAttempt();

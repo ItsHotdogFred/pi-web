@@ -34,11 +34,11 @@ function readRequestBody(req, maxBytes = 1024 * 1024) {
 	});
 }
 
-export function serveHealth(_req, res) {
+function serveHealth(_req, res) {
 	writeJson(res, 200, { ok: true }, { "Access-Control-Allow-Origin": "*" });
 }
 
-export async function serveGitInfo(req, res) {
+async function serveGitInfo(req, res) {
 	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 	const requested = url.searchParams.get("cwd");
 
@@ -52,7 +52,7 @@ export async function serveGitInfo(req, res) {
 	}
 }
 
-export async function serveContributions(req, res) {
+async function serveContributions(req, res) {
 	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 	const requested = url.searchParams.get("cwd");
 	const bust = url.searchParams.get("refresh") === "1";
@@ -67,7 +67,7 @@ export async function serveContributions(req, res) {
 	}
 }
 
-export async function serveProjectFiles(req, res) {
+async function serveProjectFiles(req, res) {
 	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 	const requested = url.searchParams.get("cwd");
 
@@ -81,7 +81,7 @@ export async function serveProjectFiles(req, res) {
 	}
 }
 
-export async function serveProjectNote(req, res) {
+async function serveProjectNote(req, res) {
 	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 	const requested = url.searchParams.get("cwd");
 
@@ -116,7 +116,7 @@ export async function serveProjectNote(req, res) {
 	}
 }
 
-export async function serveSessionSearch(req, res) {
+async function serveSessionSearch(req, res) {
 	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 	const requested = url.searchParams.get("cwd");
 	const query = url.searchParams.get("q") ?? "";
@@ -133,7 +133,7 @@ export async function serveSessionSearch(req, res) {
 	}
 }
 
-export async function serveSessionStats(req, res) {
+async function serveSessionStats(req, res) {
 	const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 	const requested = url.searchParams.get("cwd");
 	const bust = url.searchParams.get("refresh") === "1";
@@ -148,7 +148,7 @@ export async function serveSessionStats(req, res) {
 	}
 }
 
-export async function serveSessionFork(req, res) {
+async function serveSessionFork(req, res) {
 	if (req.method !== "POST") {
 		writeJson(res, 405, { message: "Method not allowed" });
 		return;

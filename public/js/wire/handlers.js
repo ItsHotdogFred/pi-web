@@ -1,9 +1,11 @@
 import { app } from "../state/store.js";
+import { chatAreaEl } from "../dom/elements.js";
 import { resetStartupSuppression } from "../utils/tools.js";
-import { setStatus, setBusy } from "../ui/status.js";
+import { setStatus, setBusy, syncSessionLoadUi } from "../ui/status.js";
 import {
 	finishSessionSwitchAnimation,
 	cancelSessionSwitchAnimation,
+	clearActiveSessionSwitchRequest,
 } from "../ui/views.js";
 import { setModels } from "../ui/models.js";
 import { setCommands } from "../commands/palette.js";
@@ -17,7 +19,7 @@ import {
 	clearProjectPathError,
 } from "../project/menu.js";
 import { syncGitContext } from "../project/git.js";
-import { renderSessions, upsertSession, switchSession } from "../dashboard/sessions.js";
+import { applySessionList, renderSessions, upsertSession, switchSession } from "../dashboard/sessions.js";
 import { fetchSessionStats } from "../dashboard/sessionStats.js";
 import { loadContributions } from "../dashboard/contributions.js";
 import { setContextUsage, renderContextUsage } from "../context/dial.js";
@@ -59,7 +61,7 @@ function handleProjectPathError(msg) {
 }
 
 function handleSessions(msg) {
-	app.session.sessions = Array.isArray(msg.sessions) ? msg.sessions : [];
+	applySessionList(Array.isArray(msg.sessions) ? msg.sessions : []);
 	renderSessions();
 	void fetchSessionStats();
 }
@@ -109,15 +111,18 @@ function handleSession(msg) {
 	renderSessions();
 	setBusy(app.ui.busy);
 	renderContextUsage();
-	finishSessionSwitchAnimation(msg.requestId);
 }
 
 function handleHistory(msg) {
 	applyHistoryBatch(msg.events);
 	finishSessionSwitchAnimation(msg.requestId);
+	syncSessionLoadUi();
 }
 
 function handleClear() {
+	if (app.session.activeSessionSwitchRequestId != null && chatAreaEl) {
+		chatAreaEl.classList.add("session-switch-hidden");
+	}
 	clearChat();
 	app.session.loadingHistory = false;
 	app.connection.startupBuffer = "";
@@ -158,7 +163,12 @@ function handleStatus(msg) {
 		scheduleAgentDefaultsFetch({ immediate: app.connection.projectSwitchPending });
 		app.connection.projectSwitchPending = false;
 		setTimeout(maybePromptForNotifications, 1000);
-		finishSessionSwitchAnimation(msg.requestId);
+		finishSessionSwitchAnimation(msg.requestId, {
+			force:
+				app.session.sessionSwitchAnimating ||
+				Boolean(chatAreaEl?.classList.contains("session-switch-hidden")),
+		});
+		clearActiveSessionSwitchRequest(msg.requestId);
 		const resumeSessionId = getResumeSessionId();
 		if (resumeSessionId && app.connection.ws?.readyState === WebSocket.OPEN) {
 			clearResumeSessionId();
@@ -245,7 +255,7 @@ function handleError(msg) {
 	setStatus("ready");
 }
 
-export const messageHandlers = {
+const messageHandlers = {
 	sessions: handleSessions,
 	models: handleModels,
 	commands: handleCommands,

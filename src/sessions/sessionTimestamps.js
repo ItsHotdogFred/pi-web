@@ -66,8 +66,8 @@ export async function enrichSessionsWithTimestamps(sessions, fileIndex) {
 	);
 
 	return sessions.map((session) => {
-		if (session.updatedAt) return session;
 		const updatedAt = timestamps.get(session.sessionId);
-		return updatedAt ? { ...session, updatedAt } : session;
+		if (updatedAt) return { ...session, updatedAt };
+		return session;
 	});
 }

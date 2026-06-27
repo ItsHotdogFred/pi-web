@@ -8,7 +8,7 @@ import { updateFileReferencesForScope, openFileReferences } from "./references.j
 import { resizeTextarea } from "./textarea.js";
 import { handleImagePaste } from "./attachments.js";
 
-export function bindComposerScope(scope) {
+function bindComposerScope(scope) {
 	const formEl = $(scope.formId);
 	const inputEl = $(scope.inputId);
 	const attachBtnEl = $(scope.attachBtnId);

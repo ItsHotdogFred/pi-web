@@ -94,14 +94,6 @@ export function updateSlashCommandsFor(scope) {
 	picker.update(inputEl);
 }
 
-export function updateInlineCommands() {
-	updateSlashCommandsFor(COMPOSER_SCOPES.dashboard);
-}
-
-export function updateChatSlashCommands() {
-	updateSlashCommandsFor(COMPOSER_SCOPES.chat);
-}
-
 export function openCommands(targetInput = getActiveInput()) {
 	targetInput.focus();
 	if (!targetInput.value.startsWith("/")) {

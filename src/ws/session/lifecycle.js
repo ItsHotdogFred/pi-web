@@ -18,9 +18,7 @@ import { visibleSessions } from "./visibility.js";
 import { disposeActiveSession } from "./dispose.js";
 import { pumpUpdates } from "./streaming.js";
 
-export { disposeActiveSession } from "./dispose.js";
-
-export async function loadSession(session, sessionId, { replay = true, requestId = null, generation = null } = {}) {
+async function loadSession(session, sessionId, { replay = true, requestId = null, generation = null } = {}) {
 	resetContextRefreshState(session);
 	const meta = requestId == null ? {} : { requestId };
 	const isStale = () => generation != null && generation !== session.sessionLoadGeneration;

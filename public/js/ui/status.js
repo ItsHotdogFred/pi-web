@@ -44,6 +44,12 @@ export function setStatus(state, detail = "") {
 	}
 }
 
+export function syncSessionLoadUi() {
+	app.session.loadingHistory = false;
+	if (app.connection.ws?.readyState !== WebSocket.OPEN) return;
+	setStatus(app.ui.busy ? "busy" : "ready");
+}
+
 export function setBusy(nextBusy) {
 	const wasBusy = app.ui.busy;
 	if (nextBusy) app.connection.wasBusyForNotification = true;

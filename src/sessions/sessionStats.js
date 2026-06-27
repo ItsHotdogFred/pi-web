@@ -46,11 +46,6 @@ export async function getSessionStats(cwd, { bust = false } = {}) {
 	return data;
 }
 
-export async function getSessionStat(cwd, sessionId, { bust = false } = {}) {
-	const { stats } = await getSessionStats(cwd, { bust });
-	return stats[sessionId] ?? { linesAdded: 0, linesRemoved: 0 };
-}
-
 export function invalidateSessionStatsCache(cwd) {
 	if (cwd) sessionStatsCache.delete(resolve(cwd));
 	else sessionStatsCache.clear();

@@ -27,7 +27,7 @@ function filteredFiles(entries, filter) {
 		.slice(0, 80);
 }
 
-export async function fetchProjectFiles() {
+async function fetchProjectFiles() {
 	const cwd = app.session.cwd || app.project.gitInfo?.path || "";
 	if (app.composer.projectFiles?.cwd === cwd && Array.isArray(app.composer.projectFiles.entries)) {
 		return app.composer.projectFiles.entries;
@@ -128,14 +128,6 @@ export function updateFileReferencesForScope(scope) {
 	const picker = getFileRefsPicker(scope);
 	if (!inputEl || !picker) return;
 	picker.update(inputEl);
-}
-
-export function updateInlineFileReferences() {
-	updateFileReferencesForScope(COMPOSER_SCOPES.dashboard);
-}
-
-export function updateChatFileReferences() {
-	updateFileReferencesForScope(COMPOSER_SCOPES.chat);
 }
 
 export function openFileReferences(targetInput = getActiveInput()) {

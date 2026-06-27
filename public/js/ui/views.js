@@ -7,61 +7,141 @@ import {
 	activityFeedEl,
 } from "../dom/elements.js";
 import { prefersReducedMotion } from "../utils/animation.js";
+import { scrollToBottomAfterLayout } from "../chat/messages.js";
+import { syncSessionLoadUi } from "./status.js";
 import { renderContextUsage } from "../context/dial.js";
 import { renderActivityFeed } from "../dashboard/activity.js";
 import { loadContributions } from "../dashboard/contributions.js";
 import { refreshTabBaseTitle } from "./tabStatus.js";
 
+const VIEW_ANIM_MS = 280;
+const SWITCH_WATCHDOG_MS = 12_000;
+
+function clearSwitchWatchdog() {
+	if (app.session.switchWatchdogTimer) {
+		clearTimeout(app.session.switchWatchdogTimer);
+		app.session.switchWatchdogTimer = null;
+	}
+}
+
+function scheduleSwitchWatchdog() {
+	clearSwitchWatchdog();
+	app.session.switchWatchdogTimer = setTimeout(() => {
+		app.session.switchWatchdogTimer = null;
+		finishSessionSwitchAnimation(null, { force: true });
+		clearActiveSessionSwitchRequest();
+		syncSessionLoadUi();
+	}, SWITCH_WATCHDOG_MS);
+}
+
+function needsSessionSwitchReveal() {
+	return (
+		app.session.sessionSwitchAnimating ||
+		Boolean(chatAreaEl?.classList.contains("session-switch-hidden"))
+	);
+}
+
+function matchesSwitchRequest(requestId) {
+	if (requestId == null) return app.session.activeSessionSwitchRequestId == null;
+	return requestId === app.session.activeSessionSwitchRequestId;
+}
+
+function completeSessionSwitchReveal(token) {
+	if (token !== app.session.sessionSwitchAnimationToken) return;
+	clearSwitchWatchdog();
+	chatAreaEl?.classList.remove("view-leaving", "view-entering", "session-switch-hidden");
+	app.session.sessionSwitchAnimating = false;
+}
+
+export function clearActiveSessionSwitchRequest(requestId = null) {
+	if (
+		requestId != null &&
+		app.session.activeSessionSwitchRequestId != null &&
+		requestId !== app.session.activeSessionSwitchRequestId
+	) {
+		return;
+	}
+	clearSwitchWatchdog();
+	app.session.activeSessionSwitchRequestId = null;
+	app.session.sessionSwitchAnimating = false;
+}
+
+function revealSessionSwitch() {
+	const token = ++app.session.sessionSwitchAnimationToken;
+
+	if (prefersReducedMotion() || !chatAreaEl) {
+		completeSessionSwitchReveal(token);
+		return;
+	}
+
+	scrollToBottomAfterLayout(() => {
+		if (token !== app.session.sessionSwitchAnimationToken) return;
+		chatAreaEl.classList.remove("view-leaving", "session-switch-hidden");
+		chatAreaEl.classList.add("view-entering");
+
+		let done = false;
+		const finalize = () => {
+			if (done || token !== app.session.sessionSwitchAnimationToken) return;
+			done = true;
+			completeSessionSwitchReveal(token);
+		};
+
+		chatAreaEl.addEventListener("animationend", finalize, { once: true });
+		setTimeout(finalize, VIEW_ANIM_MS + 40);
+	});
+}
+
 export function startSessionSwitchAnimation() {
 	if (app.session.sessionSwitchAnimating) {
-		if (!prefersReducedMotion() && chatAreaEl) {
+		app.session.sessionSwitchAnimationToken++;
+		if (chatAreaEl) {
 			chatAreaEl.classList.remove("view-entering");
 			if (!chatAreaEl.classList.contains("view-leaving")) {
 				chatAreaEl.classList.add("session-switch-hidden");
 			}
 		}
+		scheduleSwitchWatchdog();
 		return;
 	}
 
 	app.session.sessionSwitchAnimating = true;
+	scheduleSwitchWatchdog();
 	const token = ++app.session.sessionSwitchAnimationToken;
+
 	if (prefersReducedMotion() || !chatAreaEl) return;
+
 	chatAreaEl.classList.remove("view-leaving", "view-entering", "session-switch-hidden");
 	chatAreaEl.classList.add("view-leaving");
-	chatAreaEl.addEventListener(
-		"animationend",
-		() => {
-			if (token !== app.session.sessionSwitchAnimationToken) return;
-			chatAreaEl.classList.remove("view-leaving");
+
+	let hidden = false;
+	const hideAfterLeave = () => {
+		if (hidden || token !== app.session.sessionSwitchAnimationToken) return;
+		hidden = true;
+		chatAreaEl.classList.remove("view-leaving");
+		if (!chatAreaEl.classList.contains("view-entering")) {
 			chatAreaEl.classList.add("session-switch-hidden");
-		},
-		{ once: true },
-	);
+		}
+	};
+
+	chatAreaEl.addEventListener("animationend", hideAfterLeave, { once: true });
+	setTimeout(hideAfterLeave, VIEW_ANIM_MS + 40);
 }
 
-export function finishSessionSwitchAnimation(requestId = null) {
-	if (requestId == null && app.session.activeSessionSwitchRequestId != null) return;
-	if (requestId != null && requestId !== app.session.activeSessionSwitchRequestId) return;
-	if (!app.session.sessionSwitchAnimating) return;
-	const token = ++app.session.sessionSwitchAnimationToken;
-	if (prefersReducedMotion() || !chatAreaEl) {
-		app.session.sessionSwitchAnimating = false;
+export function finishSessionSwitchAnimation(requestId = null, { force = false } = {}) {
+	if (
+		requestId != null &&
+		app.session.activeSessionSwitchRequestId != null &&
+		requestId !== app.session.activeSessionSwitchRequestId
+	) {
 		return;
 	}
-	chatAreaEl.classList.remove("view-leaving", "session-switch-hidden");
-	chatAreaEl.classList.add("view-entering");
-	chatAreaEl.addEventListener(
-		"animationend",
-		() => {
-			if (token !== app.session.sessionSwitchAnimationToken) return;
-			chatAreaEl.classList.remove("view-entering");
-			app.session.sessionSwitchAnimating = false;
-		},
-		{ once: true },
-	);
+	if (!force && !matchesSwitchRequest(requestId)) return;
+	if (!needsSessionSwitchReveal()) return;
+	revealSessionSwitch();
 }
 
 export function cancelSessionSwitchAnimation() {
+	clearSwitchWatchdog();
 	app.session.sessionSwitchAnimationToken++;
 	app.session.sessionSwitchAnimating = false;
 	app.session.activeSessionSwitchRequestId = null;
@@ -69,7 +149,8 @@ export function cancelSessionSwitchAnimation() {
 }
 
 export function isStaleSwitchMessage(msg) {
-	return msg.requestId != null && msg.requestId !== app.session.activeSessionSwitchRequestId;
+	if (msg.requestId == null || app.session.activeSessionSwitchRequestId == null) return false;
+	return msg.requestId !== app.session.activeSessionSwitchRequestId;
 }
 
 export function showView(view, { animate = true } = {}) {

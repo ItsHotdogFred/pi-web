@@ -1,6 +1,6 @@
 import { forwardDefaultsUpdate, sendModelsFromConfigOptions } from "../../wire/acpEvents.js";
 
-export async function drainProbeDefaults(session, probe, timeoutMs = 3000) {
+async function drainProbeDefaults(session, probe, timeoutMs = 3000) {
 	const deadline = Date.now() + timeoutMs;
 	let lastCommandUpdateAt = 0;
 

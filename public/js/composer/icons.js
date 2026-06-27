@@ -1,4 +1,4 @@
-export const COMPOSER_ICONS = {
+const COMPOSER_ICONS = {
 	fileRef: `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
 		<path d="M4 6.5h10M4 9h7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
 		<path d="M12.5 3.5c1.2 0 2 1 2 2.2V12.5c0 1.2-.8 2.2-2 2.2H5.5c-1.2 0-2-1-2-2.2V5.7c0-1.2.8-2.2 2-2.2h7Z" stroke="currentColor" stroke-width="1.25" />

@@ -27,6 +27,7 @@ export const app = {
 		sessionSwitchRequestId: 0,
 		activeSessionSwitchRequestId: null,
 		sessionSwitchAnimationToken: 0,
+		switchWatchdogTimer: null,
 		lineStats: {},
 	},
 	chat: {

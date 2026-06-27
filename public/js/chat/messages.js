@@ -7,16 +7,60 @@ import { resetContextUsage } from "../context/dial.js";
 import { clearChangedFiles } from "./fileContext.js";
 import { resetPlanPanel } from "./planPanel.js";
 import { clearPendingUserMessage } from "./history.js";
-import { clearPromptHistory, registerUserPrompt, rebuildPromptHistory } from "./promptHistory.js";
+import { clearPromptHistory, registerUserPrompt } from "./promptHistory.js";
 
 export function getActiveInput() {
 	return app.ui.currentView === "chat" ? chatInputEl : inputEl;
 }
 
+function resetChatStreamingState() {
+	if (markdownRenderTimer !== null) {
+		clearTimeout(markdownRenderTimer);
+		markdownRenderTimer = null;
+	}
+	markdownRenderScheduled = false;
+	pendingMarkdownBlocks.clear();
+	app.chat.assistantBlock = null;
+	app.chat.assistantText = "";
+	app.chat.thoughtBlock = null;
+	app.chat.thoughtText = "";
+	resetPlanPanel();
+}
+
+function scrollLastMessageIntoView() {
+	const last = messagesEl.lastElementChild;
+	const area = $("chat-area");
+	if (last?.scrollIntoView) {
+		last.scrollIntoView({ block: "end" });
+	} else if (area) {
+		area.scrollTop = area.scrollHeight;
+	}
+}
+
 export function scrollToBottom() {
 	if (app.session.batchHistoryMode) return;
-	const area = $("chat-area");
-	if (area) area.scrollTop = area.scrollHeight;
+	if (!messagesEl.lastElementChild) {
+		const area = $("chat-area");
+		if (area) area.scrollTop = 0;
+		return;
+	}
+	scrollLastMessageIntoView();
+}
+
+export function scrollToBottomAfterLayout(callback) {
+	if (!messagesEl.lastElementChild) {
+		callback?.();
+		return;
+	}
+	const schedule =
+		typeof requestAnimationFrame === "function"
+			? requestAnimationFrame
+			: (cb) => setTimeout(cb, 0);
+	const finish = () => {
+		scrollLastMessageIntoView();
+		callback?.();
+	};
+	schedule(() => schedule(() => schedule(finish)));
 }
 
 export function clearChat() {
@@ -24,13 +68,10 @@ export function clearChat() {
 	app.chat.toolCards.clear();
 	clearPendingUserMessage();
 	clearPromptHistory();
-	finalizeAssistantTurn();
-	resetPlanPanel();
+	resetChatStreamingState();
 	clearChangedFiles();
 	resetContextUsage();
 }
-
-export { rebuildPromptHistory };
 
 export function addUserMessage(text, images = []) {
 	resetPlanPanel();

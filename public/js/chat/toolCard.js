@@ -21,7 +21,7 @@ import { trackFileFromTool } from "./fileContext.js";
 import { extractDiffFromTool, syncToolDiffSection } from "./toolDiff.js";
 import { isSubagentTool, renderSubagentPanel, syncSubagentToolCard } from "./subagent.js";
 
-export function createToolCard(id) {
+function createToolCard(id) {
 	finalizeThoughtBlock();
 	const card = document.createElement("article");
 	card.className = "tool-card";
