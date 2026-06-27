@@ -4,22 +4,23 @@ import { animateEnter } from "../utils/animation.js";
 import { escapeHtml } from "../utils/format.js";
 import { enhanceAssistantCodeBlocks, renderMarkdown } from "../utils/markdown.js";
 import { resetContextUsage } from "../context/dial.js";
-import { clearChangedFiles, resetPlanPanel } from "./tools.js";
+import { clearChangedFiles } from "./fileContext.js";
+import { resetPlanPanel } from "./planPanel.js";
 import { clearPendingUserMessage } from "./history.js";
 
 export function getActiveInput() {
-	return app.currentView === "chat" ? chatInputEl : inputEl;
+	return app.ui.currentView === "chat" ? chatInputEl : inputEl;
 }
 
 export function scrollToBottom() {
-	if (app.batchHistoryMode) return;
+	if (app.session.batchHistoryMode) return;
 	const area = $("chat-area");
 	if (area) area.scrollTop = area.scrollHeight;
 }
 
 export function clearChat() {
 	messagesEl.replaceChildren();
-	app.toolCards.clear();
+	app.chat.toolCards.clear();
 	clearPendingUserMessage();
 	finalizeAssistantTurn();
 	resetPlanPanel();
@@ -47,7 +48,7 @@ export function addUserMessage(text, images = []) {
 }
 
 function streamingMessageAnchor() {
-	return app.assistantBlock;
+	return app.chat.assistantBlock;
 }
 
 export function appendChatNode(node, { beforeStreaming = false } = {}) {
@@ -99,41 +100,41 @@ function scheduleMarkdownRender(block, getTextFn) {
 }
 
 function ensureThoughtBlock() {
-	if (app.thoughtBlock) return app.thoughtBlock;
-	app.thoughtBlock = addSystemMessage("thought", "Thinking", "");
-	app.thoughtText = "";
-	return app.thoughtBlock;
+	if (app.chat.thoughtBlock) return app.chat.thoughtBlock;
+	app.chat.thoughtBlock = addSystemMessage("thought", "Thinking", "");
+	app.chat.thoughtText = "";
+	return app.chat.thoughtBlock;
 }
 
 export function appendThoughtChunk(text) {
 	const block = ensureThoughtBlock();
-	app.thoughtText += text;
-	scheduleMarkdownRender(block, () => app.thoughtText);
+	app.chat.thoughtText += text;
+	scheduleMarkdownRender(block, () => app.chat.thoughtText);
 }
 
 export function finalizeThoughtBlock() {
 	flushMarkdownRender();
-	app.thoughtBlock = null;
-	app.thoughtText = "";
+	app.chat.thoughtBlock = null;
+	app.chat.thoughtText = "";
 }
 
 function ensureAssistantBlock() {
-	if (app.assistantBlock) return app.assistantBlock;
+	if (app.chat.assistantBlock) return app.chat.assistantBlock;
 	finalizeThoughtBlock();
-	app.assistantBlock = addSystemMessage("assistant", "", "");
-	app.assistantText = "";
-	return app.assistantBlock;
+	app.chat.assistantBlock = addSystemMessage("assistant", "", "");
+	app.chat.assistantText = "";
+	return app.chat.assistantBlock;
 }
 
 export function appendAssistantChunk(text) {
 	const block = ensureAssistantBlock();
-	app.assistantText += text;
-	scheduleMarkdownRender(block, () => app.assistantText);
+	app.chat.assistantText += text;
+	scheduleMarkdownRender(block, () => app.chat.assistantText);
 }
 
 export function finalizeAssistantTurn() {
 	flushMarkdownRender();
 	finalizeThoughtBlock();
-	app.assistantBlock = null;
-	app.assistantText = "";
+	app.chat.assistantBlock = null;
+	app.chat.assistantText = "";
 }

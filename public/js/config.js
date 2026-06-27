@@ -46,4 +46,41 @@ export const MODEL_SCOPES = {
 	},
 };
 
+export const COMPOSER_SCOPES = {
+	dashboard: {
+		formId: "composer",
+		inputId: "input",
+		attachBtnId: "attach-btn",
+		fileRefBtnId: "file-ref-btn",
+		inlineCommandsId: "inline-commands",
+		inlineCommandsListId: "inline-commands-list",
+		inlineFileRefsId: "inline-file-refs",
+		inlineFileRefsListId: "inline-file-refs-list",
+		isChat: false,
+		attachmentsPreviewId: "attachment-previews",
+		placeholder: "Ask Pi to explore, fix, or build",
+		modifierClass: "composer-box--dashboard",
+		modelScope: "dashboard",
+		primaryAction: "send",
+		showContextDial: false,
+	},
+	chat: {
+		formId: "chat-composer",
+		inputId: "chat-input",
+		attachBtnId: "chat-attach-btn",
+		fileRefBtnId: "chat-file-ref-btn",
+		inlineCommandsId: "chat-inline-commands",
+		inlineCommandsListId: "chat-inline-commands-list",
+		inlineFileRefsId: "chat-inline-file-refs",
+		inlineFileRefsListId: "chat-inline-file-refs-list",
+		isChat: true,
+		attachmentsPreviewId: "chat-attachment-previews",
+		placeholder: "Add a follow up",
+		modifierClass: "composer-box--chat",
+		modelScope: "chat",
+		primaryAction: "stop",
+		showContextDial: true,
+	},
+};
+
 export const CONTRIB_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

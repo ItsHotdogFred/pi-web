@@ -7,13 +7,13 @@ import {
 } from "../dom/elements.js";
 import { setProjectName, renderProjectMenu } from "./menu.js";
 
-export async function fetchGitInfo(projectPath = app.cwd) {
+export async function fetchGitInfo(projectPath = app.session.cwd) {
 	try {
 		const query = projectPath ? `?cwd=${encodeURIComponent(projectPath)}` : "";
 		const res = await fetch(`/api/git${query}`);
 		if (res.ok) {
-			app.gitInfo = await res.json();
-			if (app.gitInfo.path) setProjectName(app.gitInfo.path);
+			app.project.gitInfo = await res.json();
+			if (app.project.gitInfo.path) setProjectName(app.project.gitInfo.path);
 		}
 	} catch {
 		// keep defaults
@@ -23,8 +23,8 @@ export async function fetchGitInfo(projectPath = app.cwd) {
 }
 
 export function syncGitContext() {
-	const name = app.gitInfo.project || basename(app.cwd);
+	const name = app.project.gitInfo.project || basename(app.session.cwd);
 	projectNameEl.textContent = name;
-	$("project-trigger")?.setAttribute("title", app.cwd || app.gitInfo.path || name);
-	branchNameEl.textContent = app.gitInfo.branch || "master";
+	$("project-trigger")?.setAttribute("title", app.session.cwd || app.project.gitInfo.path || name);
+	branchNameEl.textContent = app.project.gitInfo.branch || "master";
 }

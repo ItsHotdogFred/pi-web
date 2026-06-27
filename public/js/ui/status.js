@@ -34,19 +34,19 @@ export function setStatus(state, detail = "") {
 		};
 		labelEl.textContent = labels[state] ?? state;
 	}
-	if (state === "error" && detail) app.lastError = detail;
+	if (state === "error" && detail) app.connection.lastError = detail;
 }
 
 export function setBusy(nextBusy) {
-	if (nextBusy) app.wasBusyForNotification = true;
-	app.busy = nextBusy;
-	const connected = app.ws && app.ws.readyState === WebSocket.OPEN;
-	const canSendDashboard = Boolean(inputEl.value.trim() || app.dashboardAttachments.length);
-	sendEl.disabled = !connected || app.busy || app.creatingSession || !canSendDashboard;
-	cancelEl.disabled = !app.busy;
-	inputEl.disabled = !connected;
-	chatInputEl.disabled = !connected;
-	sendEl.classList.toggle("hidden", !canSendDashboard);
-	cancelEl?.classList.toggle("hidden", !app.busy);
+	if (nextBusy) app.connection.wasBusyForNotification = true;
+	app.ui.busy = nextBusy;
+	const connected = app.connection.ws && app.connection.ws.readyState === WebSocket.OPEN;
+	const canSendDashboard = Boolean(inputEl?.value.trim() || app.composer.dashboardAttachments.length);
+	sendEl && (sendEl.disabled = !connected || app.ui.busy || app.session.creatingSession || !canSendDashboard);
+	cancelEl && (cancelEl.disabled = !app.ui.busy);
+	if (inputEl) inputEl.disabled = !connected;
+	if (chatInputEl) chatInputEl.disabled = !connected;
+	sendEl?.classList.toggle("hidden", !canSendDashboard);
+	cancelEl?.classList.toggle("hidden", !app.ui.busy);
 	renderContextUsage();
 }

@@ -7,6 +7,7 @@ import {
 	notificationPromptDismissEl,
 } from "../dom/elements.js";
 import { sessionTitle } from "../dashboard/sessionHelpers.js";
+import { createModal } from "../ui/modal.js";
 
 function getNotificationPref() {
 	try {
@@ -24,21 +25,29 @@ function setNotificationPref(value) {
 	}
 }
 
-function setNotificationPromptOpen(open) {
-	if (!notificationPromptModalEl) return;
-	notificationPromptModalEl.classList.toggle("hidden", !open);
-	notificationPromptModalEl.setAttribute("aria-hidden", String(!open));
+let notificationPromptModal = null;
+
+function getNotificationPromptModal() {
+	if (!notificationPromptModal && notificationPromptModalEl) {
+		notificationPromptModal = createModal({
+			el: notificationPromptModalEl,
+			backdropEl: $("notification-prompt-backdrop"),
+			onClose: dismissTaskNotifications,
+			restoreFocus: false,
+		});
+	}
+	return notificationPromptModal;
 }
 
 export function maybePromptForNotifications() {
 	if (!("Notification" in window)) return;
 	if (getNotificationPref() !== null) return;
-	setNotificationPromptOpen(true);
+	getNotificationPromptModal()?.open();
 	notificationPromptEnableEl?.focus();
 }
 
 async function enableTaskNotifications() {
-	setNotificationPromptOpen(false);
+	getNotificationPromptModal()?.close();
 	if (!("Notification" in window)) {
 		setNotificationPref("disabled");
 		return;
@@ -50,17 +59,17 @@ async function enableTaskNotifications() {
 
 function dismissTaskNotifications() {
 	setNotificationPref("disabled");
-	setNotificationPromptOpen(false);
+	getNotificationPromptModal()?.close();
 }
 
 export function requestAgentDefaults() {
-	if (app.defaultsRequested || !app.ws || app.ws.readyState !== WebSocket.OPEN) return;
-	app.defaultsRequested = true;
-	app.ws.send(JSON.stringify({ type: "fetch_defaults" }));
+	if (app.connection.defaultsRequested || !app.connection.ws || app.connection.ws.readyState !== WebSocket.OPEN) return;
+	app.connection.defaultsRequested = true;
+	app.connection.ws.send(JSON.stringify({ type: "fetch_defaults" }));
 }
 
 export function scheduleAgentDefaultsFetch({ immediate = false } = {}) {
-	if (app.defaultsRequested || app.models.length > 0) return;
+	if (app.connection.defaultsRequested || app.models.list.length > 0) return;
 	if (immediate) {
 		requestAgentDefaults();
 		return;
@@ -76,10 +85,10 @@ export function scheduleAgentDefaultsFetch({ immediate = false } = {}) {
 export function notifyTaskComplete() {
 	if (getNotificationPref() !== "enabled") return;
 	if (!("Notification" in window) || Notification.permission !== "granted") return;
-	if (!app.wasBusyForNotification) return;
-	if (!document.hidden && app.currentView === "chat") return;
+	if (!app.connection.wasBusyForNotification) return;
+	if (!document.hidden && app.ui.currentView === "chat") return;
 
-	const active = app.sessions.find((s) => s.sessionId === app.sessionId);
+	const active = app.session.sessions.find((s) => s.sessionId === app.session.sessionId);
 	const title = active ? sessionTitle(active) : "Pi";
 	try {
 		new Notification("Pi finished", {
@@ -98,5 +107,4 @@ export function initNotificationPrompt() {
 		void enableTaskNotifications();
 	});
 	notificationPromptDismissEl?.addEventListener("click", dismissTaskNotifications);
-	$("notification-prompt-backdrop")?.addEventListener("click", dismissTaskNotifications);
 }

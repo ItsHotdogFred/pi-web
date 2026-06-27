@@ -5,7 +5,7 @@ export function prefersReducedMotion() {
 }
 
 export function animateEnter(el, className = "anim-fade-up", { delay = 0 } = {}) {
-	if (!el || app.batchHistoryMode || prefersReducedMotion()) return;
+	if (!el || app.session.batchHistoryMode || prefersReducedMotion()) return;
 	if (delay > 0) el.style.animationDelay = `${delay}ms`;
 	el.classList.add(className);
 	el.addEventListener(

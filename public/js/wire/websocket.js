@@ -1,64 +1,24 @@
 import { app } from "../state/store.js";
 import { wsUrl } from "../config.js";
-import { resetStartupSuppression, shouldSkipStartupContent } from "../utils/tools.js";
+import { clearPendingUserMessage } from "../chat/history.js";
 import { setStatus, setBusy } from "../ui/status.js";
+import { isStaleSwitchMessage } from "../ui/views.js";
+import { clearPermissionRequests } from "../permissions/modal.js";
+import { dispatchMessage } from "./handlers.js";
 import {
-	isStaleSwitchMessage,
-	finishSessionSwitchAnimation,
-	cancelSessionSwitchAnimation,
-} from "../ui/views.js";
-import { setModels } from "../ui/models.js";
-import { setCommands } from "../commands/palette.js";
-import {
-	setProjectName,
-	rememberProject,
-	renderProjectMenu,
-	showProjectPathError,
-	reopenProjectMenu,
-	resetForProjectSwitch,
-	clearProjectPathError,
-} from "../project/menu.js";
-import { syncGitContext } from "../project/git.js";
-import { renderSessions, upsertSession, switchSession } from "../dashboard/sessions.js";
-import { loadContributions } from "../dashboard/contributions.js";
-import { setContextUsage, renderContextUsage } from "../context/dial.js";
-import {
-	clearPendingUserMessage,
-	flushUserMessage,
-	appendUserChunk,
-	applyHistoryBatch,
-} from "../chat/history.js";
-import {
-	addUserMessage,
-	addSystemMessage,
-	appendAssistantChunk,
-	appendThoughtChunk,
-	finalizeAssistantTurn,
-	flushMarkdownRender,
-	clearChat,
-} from "../chat/messages.js";
-import { updateToolCard, renderPlanPanel } from "../chat/tools.js";
-import {
-	enqueuePermissionRequest,
-	formatPermissionResult,
-	clearPermissionRequests,
-} from "../permissions/modal.js";
-import {
-	scheduleAgentDefaultsFetch,
-	maybePromptForNotifications,
-	notifyTaskComplete,
-} from "../notifications/prompt.js";
-import { deliverPrompt } from "./send.js";
+	setResumeSessionId,
+	clearResumeSessionId,
+	getReconnectAttempt,
+	incrementReconnectAttempt,
+	resetReconnectAttempts,
+} from "./connection.js";
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
 const MAX_RECONNECT_ATTEMPTS = 20;
 
 let reconnectTimer = null;
-let reconnectAttempt = 0;
 let connectionGeneration = 0;
-/** @type {string | null} */
-let resumeSessionId = null;
 
 function clearReconnectTimer() {
 	if (reconnectTimer) {
@@ -68,12 +28,8 @@ function clearReconnectTimer() {
 }
 
 function getReconnectDelayMs() {
-	const delay = RECONNECT_BASE_MS * 2 ** (reconnectAttempt - 1);
+	const delay = RECONNECT_BASE_MS * 2 ** (getReconnectAttempt() - 1);
 	return Math.min(delay, RECONNECT_MAX_MS);
-}
-
-function resetReconnectAttempts() {
-	reconnectAttempt = 0;
 }
 
 function scheduleReconnect() {
@@ -85,22 +41,22 @@ function scheduleReconnect() {
 }
 
 function resetConnectionState(isReconnect) {
-	app.lastError = "";
-	app.gotReady = false;
-	app.creatingSession = false;
-	app.awaitingNewAgentSession = false;
-	app.freshDashboardSession = false;
-	app.pendingDashboardPrompt = null;
-	app.loadingHistory = false;
+	app.connection.lastError = "";
+	app.connection.gotReady = false;
+	app.session.creatingSession = false;
+	app.session.awaitingNewAgentSession = false;
+	app.session.freshDashboardSession = false;
+	app.session.pendingDashboardPrompt = null;
+	app.session.loadingHistory = false;
 	clearPendingUserMessage();
-	app.defaultsRequested = false;
-	app.wasBusyForNotification = false;
+	app.connection.defaultsRequested = false;
+	app.connection.wasBusyForNotification = false;
 
 	if (isReconnect) {
-		if (app.sessionId) resumeSessionId = app.sessionId;
+		if (app.session.sessionId) setResumeSessionId(app.session.sessionId);
 	} else {
-		app.sessionId = null;
-		resumeSessionId = null;
+		app.session.sessionId = null;
+		clearResumeSessionId();
 	}
 }
 
@@ -116,44 +72,44 @@ export function connect(isReconnect = false) {
 	connectionGeneration += 1;
 	const generation = connectionGeneration;
 
-	if (app.ws) {
+	if (app.connection.ws) {
 		try {
-			app.ws.close();
+			app.connection.ws.close();
 		} catch {
 			// ignore
 		}
-		app.ws = null;
+		app.connection.ws = null;
 	}
 
 	resetConnectionState(isReconnect);
 	setStatus("connecting");
-	app.ws = new WebSocket(wsUrl);
+	app.connection.ws = new WebSocket(wsUrl);
 
-	app.ws.addEventListener("open", () => {
+	app.connection.ws.addEventListener("open", () => {
 		if (generation !== connectionGeneration) return;
 		setBusy(false);
 	});
 
-	app.ws.addEventListener("close", () => {
+	app.connection.ws.addEventListener("close", () => {
 		if (generation !== connectionGeneration) return;
 		clearPermissionRequests();
 		setBusy(false);
-		reconnectAttempt += 1;
-		if (reconnectAttempt > MAX_RECONNECT_ATTEMPTS) {
+		incrementReconnectAttempt();
+		if (getReconnectAttempt() > MAX_RECONNECT_ATTEMPTS) {
 			clearReconnectTimer();
 			setStatus("error", "Disconnected — refresh to retry");
 			return;
 		}
-		setStatus("error", app.gotReady ? "Disconnected" : app.lastError || "Disconnected");
+		setStatus("error", app.connection.gotReady ? "Disconnected" : app.connection.lastError || "Disconnected");
 		scheduleReconnect();
 	});
 
-	app.ws.addEventListener("error", () => {
+	app.connection.ws.addEventListener("error", () => {
 		if (generation !== connectionGeneration) return;
-		if (!app.gotReady) app.lastError = "Connection failed";
+		if (!app.connection.gotReady) app.connection.lastError = "Connection failed";
 	});
 
-	app.ws.addEventListener("message", (event) => {
+	app.connection.ws.addEventListener("message", (event) => {
 		if (generation !== connectionGeneration) return;
 
 		let msg;
@@ -165,207 +121,6 @@ export function connect(isReconnect = false) {
 
 		if (isStaleSwitchMessage(msg)) return;
 
-		switch (msg.type) {
-			case "sessions":
-				app.sessions = Array.isArray(msg.sessions) ? msg.sessions : [];
-				renderSessions();
-				break;
-
-			case "models":
-				setModels(msg);
-				break;
-
-			case "commands":
-				setCommands(msg.commands);
-				break;
-
-			case "project":
-				app.gitInfo = { ...app.gitInfo, ...msg };
-				if (msg.path) {
-					setProjectName(msg.path);
-					rememberProject(msg.path);
-				}
-				app.pendingProjectPath = null;
-				clearProjectPathError();
-				syncGitContext();
-				renderProjectMenu();
-				break;
-
-			case "session":
-				app.sessionId = msg.sessionId ?? null;
-				app.creatingSession = false;
-				if (app.sessionId && !(app.pendingDashboardPrompt && msg.title == null)) {
-					const entry = {
-						sessionId: app.sessionId,
-						title: msg.title ?? null,
-						cwd: msg.cwd ?? app.cwd,
-					};
-					if (msg.updatedAt) entry.updatedAt = msg.updatedAt;
-					upsertSession(entry);
-				}
-				if (app.awaitingNewAgentSession) {
-					app.awaitingNewAgentSession = false;
-					app.freshDashboardSession = true;
-				}
-				if (app.pendingDashboardPrompt) {
-					const pending = app.pendingDashboardPrompt;
-					app.pendingDashboardPrompt = null;
-					app.freshDashboardSession = false;
-					deliverPrompt(pending.text, pending.images);
-				}
-				renderSessions();
-				setBusy(app.busy);
-				renderContextUsage();
-				finishSessionSwitchAnimation(msg.requestId);
-				break;
-
-			case "history":
-				applyHistoryBatch(msg.events);
-				finishSessionSwitchAnimation(msg.requestId);
-				break;
-
-			case "clear":
-				clearChat();
-				app.loadingHistory = false;
-				app.startupBuffer = "";
-				app.startupInfoSkipped = false;
-				app.startupBufferChunks = 0;
-				app.suppressStartupDump = true;
-				break;
-
-			case "context":
-				setContextUsage(msg);
-				break;
-
-			case "status":
-				if (msg.cwd) {
-					if (app.gotReady && msg.cwd !== app.cwd && msg.state === "connecting") {
-						resetForProjectSwitch(msg.cwd);
-					} else {
-						setProjectName(msg.cwd);
-					}
-				}
-				if (msg.state === "ready") {
-					if (app.loadingHistory) {
-						flushUserMessage();
-						app.loadingHistory = false;
-					}
-					resetReconnectAttempts();
-					app.gotReady = true;
-					app.connectionState = "ready";
-					app.startupBuffer = "";
-					app.startupInfoSkipped = false;
-					app.startupBufferChunks = 0;
-					setStatus("ready");
-					setBusy(false);
-					app.sessionId = msg.sessionId ?? null;
-					if (app.cwd) rememberProject(app.cwd);
-					renderSessions();
-					renderContextUsage();
-					scheduleAgentDefaultsFetch({ immediate: app.projectSwitchPending });
-					app.projectSwitchPending = false;
-					setTimeout(maybePromptForNotifications, 1000);
-					finishSessionSwitchAnimation(msg.requestId);
-					if (resumeSessionId && app.ws?.readyState === WebSocket.OPEN) {
-						const sessionId = resumeSessionId;
-						resumeSessionId = null;
-						switchSession(sessionId);
-					}
-				} else if (msg.state === "busy") {
-					setStatus("busy");
-					setBusy(true);
-					renderSessions();
-				} else if (msg.state === "loading_history") {
-					app.loadingHistory = true;
-					setStatus("loading_history");
-				} else if (msg.state === "connecting") {
-					app.connectionState = "connecting";
-					resetStartupSuppression();
-					app.suppressStartupDump = true;
-					setStatus("connecting");
-				} else if (msg.state === "error") {
-					if (app.pendingProjectPath) {
-						showProjectPathError(msg.message ?? "Could not open that folder.");
-						reopenProjectMenu();
-						app.pendingProjectPath = null;
-					}
-					cancelSessionSwitchAnimation();
-					setStatus("error", msg.message ?? "Error");
-				}
-				break;
-
-			case "user":
-				if (!app.loadingHistory) break;
-				finalizeAssistantTurn();
-				addUserMessage(msg.text ?? "", Array.isArray(msg.images) ? msg.images : []);
-				break;
-
-			case "user_chunk":
-				if (!app.loadingHistory) break;
-				appendUserChunk(msg);
-				break;
-
-			case "chunk": {
-				if (app.loadingHistory) flushUserMessage();
-				const chunkText = msg.text ?? "";
-				if (!shouldSkipStartupContent(chunkText)) appendAssistantChunk(chunkText);
-				break;
-			}
-
-			case "thought": {
-				if (app.loadingHistory) flushUserMessage();
-				const chunkText = msg.text ?? "";
-				if (!shouldSkipStartupContent(chunkText)) appendThoughtChunk(chunkText);
-				break;
-			}
-
-			case "tool":
-				if (app.loadingHistory) flushUserMessage();
-				updateToolCard(msg);
-				break;
-
-			case "permission_request":
-				enqueuePermissionRequest(msg);
-				break;
-
-			case "permission":
-				addSystemMessage("system", "Permission", formatPermissionResult(msg));
-				break;
-
-			case "plan":
-				if (app.loadingHistory) flushUserMessage();
-				renderPlanPanel(msg.entries);
-				break;
-
-			case "done":
-				finalizeAssistantTurn();
-				app.contextCompactPending = false;
-				resetStartupSuppression();
-				setStatus("ready");
-				setBusy(false);
-				renderSessions();
-				notifyTaskComplete();
-				app.wasBusyForNotification = false;
-				void loadContributions({ refresh: true });
-				break;
-
-			case "error":
-				if (app.pendingProjectPath) {
-					showProjectPathError(msg.message ?? "Could not open that folder.");
-					reopenProjectMenu();
-					app.pendingProjectPath = null;
-				}
-				cancelSessionSwitchAnimation();
-				flushMarkdownRender();
-				addSystemMessage("error", "Error", msg.message ?? "Unknown error");
-				app.contextCompactPending = false;
-				setBusy(false);
-				app.wasBusyForNotification = false;
-				setStatus("ready");
-				break;
-
-			default:
-				break;
-		}
+		dispatchMessage(msg);
 	});
 }

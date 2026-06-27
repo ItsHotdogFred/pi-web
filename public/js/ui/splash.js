@@ -1,3 +1,5 @@
+import { buildSplashSkeleton } from "./splashSkeleton.js";
+
 /** @type {HTMLElement | null} */
 let splashEl = null;
 /** @type {HTMLElement | null} */
@@ -7,8 +9,13 @@ let appEl = null;
 
 export function initSplash() {
 	splashEl = document.getElementById("startup-splash");
-	splashStatusEl = document.getElementById("startup-splash-status");
 	appEl = document.querySelector(".app.app--booting");
+
+	if (splashEl && !splashEl.childElementCount) {
+		splashEl.appendChild(buildSplashSkeleton());
+	}
+
+	splashStatusEl = document.getElementById("startup-splash-status");
 
 	const gridEl = document.getElementById("startup-skeleton-contrib");
 	if (gridEl && !gridEl.childElementCount) {

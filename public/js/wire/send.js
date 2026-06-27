@@ -28,7 +28,7 @@ export function deliverPrompt(trimmed, images, fromChat = false) {
 		return;
 	}
 
-	app.lastPrompt = trimmed || (images.length ? `[${images.length} image${images.length === 1 ? "" : "s"}]` : "");
+	app.chat.lastPrompt = trimmed || (images.length ? `[${images.length} image${images.length === 1 ? "" : "s"}]` : "");
 	showView("chat");
 	addUserMessage(trimmed, images);
 
@@ -36,7 +36,7 @@ export function deliverPrompt(trimmed, images, fromChat = false) {
 	resizeTextarea(target);
 	clearAttachments(target);
 
-	app.ws.send(
+	app.connection.ws.send(
 		JSON.stringify({
 			type: "prompt",
 			text: trimmed,
@@ -49,7 +49,7 @@ export function sendPrompt(text, fromChat = false) {
 	const target = fromChat ? chatInputEl : inputEl;
 	const trimmed = text.trim();
 	const attachments = [...getAttachmentsFor(target)];
-	if ((!trimmed && attachments.length === 0) || !app.ws || app.ws.readyState !== WebSocket.OPEN || app.busy) return;
+	if ((!trimmed && attachments.length === 0) || !app.connection.ws || app.connection.ws.readyState !== WebSocket.OPEN || app.ui.busy) return;
 
 	const images = attachments.map(({ name, mimeType, data, previewUrl }) => ({
 		name,
@@ -58,13 +58,13 @@ export function sendPrompt(text, fromChat = false) {
 		previewUrl,
 	}));
 
-	if (!fromChat && (!app.sessionId || !app.freshDashboardSession)) {
-		app.pendingDashboardPrompt = { text: trimmed, images };
-		app.awaitingNewAgentSession = true;
-		if (!app.creatingSession) newSession();
+	if (!fromChat && (!app.session.sessionId || !app.session.freshDashboardSession)) {
+		app.session.pendingDashboardPrompt = { text: trimmed, images };
+		app.session.awaitingNewAgentSession = true;
+		if (!app.session.creatingSession) newSession();
 		return;
 	}
 
-	app.freshDashboardSession = false;
+	app.session.freshDashboardSession = false;
 	deliverPrompt(trimmed, images, fromChat);
 }

@@ -27,83 +27,7 @@
 		</style>
 	</head>
 	<body>
-		<div id="startup-splash" class="dashboard-skeleton" aria-live="polite" aria-busy="true">
-			<div class="app">
-				<aside class="sidebar" aria-hidden="true">
-					<div class="sidebar-top">
-						<div class="skeleton-block skeleton-icon-btn"></div>
-					</div>
-					<nav class="sidebar-nav">
-						<div class="skeleton-block skeleton-nav-item"></div>
-					</nav>
-					<section class="sidebar-section">
-						<div class="skeleton-block skeleton-section-title"></div>
-						<div class="skeleton-block skeleton-today-item"></div>
-						<div class="skeleton-block skeleton-today-item"></div>
-						<div class="skeleton-block skeleton-today-item"></div>
-					</section>
-				</aside>
-
-				<main class="main">
-					<div class="view view-dashboard">
-						<header class="page-header">
-							<div class="context-chips">
-								<div class="skeleton-block skeleton-chip"></div>
-								<div class="skeleton-block skeleton-chip skeleton-chip--short"></div>
-							</div>
-							<div class="connection-status status-connecting">
-								<span class="status-dot" aria-hidden="true"></span>
-								<span id="startup-splash-status">Loading…</span>
-							</div>
-						</header>
-
-						<div class="dashboard-body">
-							<div class="skeleton-composer">
-								<div class="skeleton-block skeleton-composer-input"></div>
-								<div class="skeleton-composer-bar">
-									<div class="skeleton-block skeleton-pill"></div>
-									<div class="skeleton-composer-actions">
-										<div class="skeleton-block skeleton-icon-btn"></div>
-										<div class="skeleton-block skeleton-send-btn"></div>
-									</div>
-								</div>
-							</div>
-
-							<div class="skeleton-block skeleton-commands-hint"></div>
-
-							<div class="skeleton-contrib">
-								<div class="skeleton-block skeleton-contrib-title"></div>
-								<div class="skeleton-contrib-grid" id="startup-skeleton-contrib" aria-hidden="true"></div>
-							</div>
-
-							<div class="skeleton-activity" aria-hidden="true">
-								<div class="skeleton-activity-card">
-									<div class="skeleton-block skeleton-activity-art"></div>
-									<div class="skeleton-activity-body">
-										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--title"></div>
-										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--meta"></div>
-									</div>
-								</div>
-								<div class="skeleton-activity-card">
-									<div class="skeleton-block skeleton-activity-art"></div>
-									<div class="skeleton-activity-body">
-										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--title"></div>
-										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--meta"></div>
-									</div>
-								</div>
-								<div class="skeleton-activity-card">
-									<div class="skeleton-block skeleton-activity-art"></div>
-									<div class="skeleton-activity-body">
-										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--title"></div>
-										<div class="skeleton-block skeleton-activity-line skeleton-activity-line--meta"></div>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-				</main>
-			</div>
-		</div>
+		<div id="startup-splash" class="dashboard-skeleton" aria-live="polite" aria-busy="true"></div>
 		<div class="app app--booting">
 			<aside class="sidebar" id="sidebar">
 				<div class="sidebar-top">
@@ -186,69 +110,9 @@
 					</header>
 
 					<div class="dashboard-body">
-						<div class="inline-commands" id="inline-commands" aria-label="Slash commands" aria-hidden="true">
-							<ul class="inline-commands-list" id="inline-commands-list"></ul>
-						</div>
+						<div id="dashboard-inline-pickers"></div>
 
-						<div class="inline-commands" id="inline-file-refs" aria-label="File references" aria-hidden="true">
-							<ul class="inline-commands-list" id="inline-file-refs-list"></ul>
-						</div>
-
-						<form class="composer-box home-composer" id="composer">
-							<textarea
-								id="input"
-								rows="2"
-								placeholder="Ask Pi to explore, fix, or build"
-								autocomplete="off"
-								spellcheck="true"
-							></textarea>
-							<div class="attachment-previews hidden" id="attachment-previews" aria-label="Attached images"></div>
-							<div class="composer-bar">
-								<div class="composer-left">
-									<div class="dropdown composer-dropdown" id="model-dropdown">
-										<button type="button" class="pill-btn dropdown-trigger" id="model-trigger">
-											<span id="model-label">Model</span>
-											<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-												<path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-											</svg>
-										</button>
-										<div class="dropdown-menu model-menu hidden" id="model-menu">
-											<div class="model-menu-search-wrap">
-												<input
-													type="search"
-													id="model-search"
-													placeholder="Search models…"
-													autocomplete="off"
-													spellcheck="false"
-												/>
-											</div>
-											<div class="model-menu-list" id="model-menu-list"></div>
-										</div>
-									</div>
-								</div>
-								<div class="composer-right">
-									<button type="button" class="icon-btn composer-icon" id="file-ref-btn" aria-label="Reference file or folder">
-										<svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-											<path d="M4 6.5h10M4 9h7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
-											<path d="M12.5 3.5c1.2 0 2 1 2 2.2V12.5c0 1.2-.8 2.2-2 2.2H5.5c-1.2 0-2-1-2-2.2V5.7c0-1.2.8-2.2 2-2.2h7Z" stroke="currentColor" stroke-width="1.25" />
-											<path d="M12 6.5h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-										</svg>
-									</button>
-									<button type="button" class="icon-btn composer-icon" id="attach-btn" aria-label="Attach image">
-										<svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-											<rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25" />
-											<circle cx="6.5" cy="7.5" r="1.5" stroke="currentColor" stroke-width="1.1" />
-											<path d="M2 12l4-3.5 3 2.5 3-2.5 4 3.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />
-										</svg>
-									</button>
-									<button type="submit" class="send-btn" id="send" disabled aria-label="Send">
-										<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-											<path d="M8 14V3M8 3l-4 4M8 3l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-										</svg>
-									</button>
-								</div>
-							</div>
-						</form>
+						<div id="dashboard-composer-mount"></div>
 
 						<button type="button" class="commands-hint" id="commands-hint">
 							Try Commands <kbd>/</kbd>
@@ -328,96 +192,9 @@
 							</div>
 						</div>
 
-						<div class="inline-commands" id="chat-inline-commands" aria-label="Slash commands" aria-hidden="true">
-							<ul class="inline-commands-list" id="chat-inline-commands-list"></ul>
-						</div>
+						<div id="chat-inline-pickers"></div>
 
-						<div class="inline-commands" id="chat-inline-file-refs" aria-label="File references" aria-hidden="true">
-							<ul class="inline-commands-list" id="chat-inline-file-refs-list"></ul>
-						</div>
-
-						<form class="composer-box chat-composer-box" id="chat-composer">
-							<textarea
-								id="chat-input"
-								rows="2"
-								placeholder="Add a follow up"
-								autocomplete="off"
-								spellcheck="true"
-							></textarea>
-							<div class="attachment-previews hidden" id="chat-attachment-previews" aria-label="Attached images"></div>
-							<div class="composer-bar">
-								<div class="composer-left">
-									<div class="context-dial-wrap hidden" id="context-dial-wrap">
-										<button
-											type="button"
-											class="context-dial"
-											id="context-dial-trigger"
-											aria-expanded="false"
-											aria-controls="context-popover"
-										>
-											<svg class="context-dial-svg" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-												<circle class="context-dial-track" cx="9" cy="9" r="7" />
-												<circle class="context-dial-fill" cx="9" cy="9" r="7" />
-											</svg>
-											<span class="context-dial-label" id="context-dial-label">—</span>
-										</button>
-										<div class="context-popover hidden" id="context-popover" role="tooltip">
-											<div class="context-popover-header">
-												<span class="context-popover-title">Context</span>
-												<span class="context-popover-summary" id="context-popover-summary">— / —</span>
-											</div>
-											<ul class="context-breakdown" id="context-breakdown"></ul>
-											<div class="context-actions hidden" id="context-actions">
-												<button type="button" class="context-action-btn" id="context-compact-btn">Compact now</button>
-												<button type="button" class="context-action-btn context-action-btn--secondary" id="context-new-session-btn">Start fresh session</button>
-											</div>
-											<p class="context-popover-note">Without SYSTEM.md, Pi uses its bundled default prompt (dist/core/system-prompt.js). APPEND_SYSTEM.md extends that base. Skills and MCP tool schemas add separately.</p>
-										</div>
-									</div>
-									<div class="dropdown composer-dropdown" id="chat-model-dropdown">
-										<button type="button" class="pill-btn dropdown-trigger" id="chat-model-trigger">
-											<span id="chat-model-label">Model</span>
-											<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-												<path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-											</svg>
-										</button>
-										<div class="dropdown-menu model-menu hidden" id="chat-model-menu">
-											<div class="model-menu-search-wrap">
-												<input
-													type="search"
-													id="chat-model-search"
-													placeholder="Search models…"
-													autocomplete="off"
-													spellcheck="false"
-												/>
-											</div>
-											<div class="model-menu-list" id="chat-model-menu-list"></div>
-										</div>
-									</div>
-								</div>
-								<div class="composer-right">
-									<button type="button" class="icon-btn composer-icon" id="chat-file-ref-btn" aria-label="Reference file or folder">
-										<svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-											<path d="M4 6.5h10M4 9h7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
-											<path d="M12.5 3.5c1.2 0 2 1 2 2.2V12.5c0 1.2-.8 2.2-2 2.2H5.5c-1.2 0-2-1-2-2.2V5.7c0-1.2.8-2.2 2-2.2h7Z" stroke="currentColor" stroke-width="1.25" />
-											<path d="M12 6.5h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-										</svg>
-									</button>
-									<button type="button" class="icon-btn composer-icon" id="chat-attach-btn" aria-label="Attach image">
-										<svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-											<rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25" />
-											<circle cx="6.5" cy="7.5" r="1.5" stroke="currentColor" stroke-width="1.1" />
-											<path d="M2 12l4-3.5 3 2.5 3-2.5 4 3.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />
-										</svg>
-									</button>
-									<button type="button" id="cancel" class="icon-btn composer-icon btn-stop hidden" disabled aria-label="Stop">
-										<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-											<rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" />
-										</svg>
-									</button>
-								</div>
-							</div>
-						</form>
+						<div id="chat-composer-mount"></div>
 					</div>
 				</div>
 			</main>
@@ -425,68 +202,75 @@
 
 		<input type="file" id="file-input" accept="image/*" class="hidden" />
 
-		<div class="permission-modal hidden" id="permission-modal" aria-hidden="true">
-			<div class="permission-backdrop" id="permission-backdrop"></div>
-			<div
-				class="permission-dialog"
-				id="permission-dialog"
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby="permission-title"
-			>
-				<h2 class="permission-title" id="permission-title">Allow tool?</h2>
-				<pre class="permission-details hidden" id="permission-details"></pre>
-				<div class="permission-actions" id="permission-actions"></div>
-			</div>
-		</div>
+		<div id="modals-mount"></div>
 
-		<div class="permission-modal hidden" id="notification-prompt-modal" aria-hidden="true">
-			<div class="permission-backdrop" id="notification-prompt-backdrop"></div>
-			<div
-				class="permission-dialog"
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby="notification-prompt-title"
-			>
-				<h2 class="permission-title" id="notification-prompt-title">Task notifications</h2>
-				<p class="notification-prompt-text">
-					Get a browser notification when Pi finishes a task? Useful when you switch tabs while it works.
-				</p>
-				<div class="permission-actions">
-					<button type="button" class="permission-btn" id="notification-prompt-dismiss">Not now</button>
-					<button type="button" class="permission-btn permission-btn--allow" id="notification-prompt-enable">
-						Enable notifications
-					</button>
-				</div>
+		<template id="modal-shell-template">
+			<div class="permission-modal hidden" aria-hidden="true">
+				<div class="permission-backdrop"></div>
+				<div class="permission-dialog" role="dialog" aria-modal="true"></div>
 			</div>
-		</div>
+		</template>
 
-		<div class="permission-modal hidden" id="project-note-modal" aria-hidden="true">
-			<div class="permission-backdrop" id="project-note-backdrop"></div>
-			<div
-				class="project-note-dialog"
-				id="project-note-dialog"
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby="project-note-title"
-			>
-				<div class="project-note-header">
-					<h2 class="permission-title" id="project-note-title">Project note</h2>
-					<span class="project-note-status" id="project-note-status"></span>
+		<template id="inline-picker-template">
+			<div class="inline-commands" aria-hidden="true">
+				<ul class="inline-commands-list"></ul>
+			</div>
+		</template>
+
+		<template id="composer-form-template">
+			<form class="composer-box">
+				<textarea rows="2" autocomplete="off" spellcheck="true"></textarea>
+				<div class="attachment-previews hidden" aria-label="Attached images"></div>
+				<div class="composer-bar">
+					<div class="composer-left"></div>
+					<div class="composer-right">
+						<button type="button" class="icon-btn composer-icon" data-composer-icon="fileRef" aria-label="Reference file or folder"></button>
+						<button type="button" class="icon-btn composer-icon" data-composer-icon="attach" aria-label="Attach image"></button>
+					</div>
 				</div>
-				<p class="project-note-path" id="project-note-path"></p>
-				<textarea
-					class="project-note-input"
-					id="project-note-input"
-					placeholder="Scratchpad for this project — todos, context, links…"
-					spellcheck="true"
-				></textarea>
-				<div class="permission-actions project-note-actions">
-					<span class="project-note-hint">Ctrl/Cmd+Shift+N</span>
-					<button type="button" class="permission-btn" id="project-note-close">Close</button>
+			</form>
+		</template>
+
+		<template id="model-dropdown-template">
+			<div class="dropdown composer-dropdown">
+				<button type="button" class="pill-btn dropdown-trigger">
+					<span>Model</span>
+					<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+						<path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+					</svg>
+				</button>
+				<div class="dropdown-menu model-menu hidden">
+					<div class="model-menu-search-wrap">
+						<input type="search" placeholder="Search models…" autocomplete="off" spellcheck="false" />
+					</div>
+					<div class="model-menu-list"></div>
 				</div>
 			</div>
-		</div>
+		</template>
+
+		<template id="context-dial-template">
+			<div class="context-dial-wrap hidden">
+				<button type="button" class="context-dial" aria-expanded="false" aria-controls="context-popover">
+					<svg class="context-dial-svg" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+						<circle class="context-dial-track" cx="9" cy="9" r="7" />
+						<circle class="context-dial-fill" cx="9" cy="9" r="7" />
+					</svg>
+					<span class="context-dial-label">—</span>
+				</button>
+				<div class="context-popover hidden" role="tooltip">
+					<div class="context-popover-header">
+						<span class="context-popover-title">Context</span>
+						<span class="context-popover-summary">— / —</span>
+					</div>
+					<ul class="context-breakdown"></ul>
+					<div class="context-actions hidden">
+						<button type="button" class="context-action-btn">Compact now</button>
+						<button type="button" class="context-action-btn context-action-btn--secondary">Start fresh session</button>
+					</div>
+					<p class="context-popover-note">Without SYSTEM.md, Pi uses its bundled default prompt (dist/core/system-prompt.js). APPEND_SYSTEM.md extends that base. Skills and MCP tool schemas add separately.</p>
+				</div>
+			</div>
+		</template>
 
 		<script src="/marked.min.js"></script>
 		<script type="module" src="/app.js"></script>

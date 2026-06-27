@@ -2,13 +2,13 @@ import { app } from "../state/store.js";
 import { basename } from "../utils/format.js";
 
 export function sortedSessions() {
-	return [...app.sessions].sort(
+	return [...app.session.sessions].sort(
 		(a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime(),
 	);
 }
 
 export function filteredSessions() {
-	const q = app.searchQuery.trim().toLowerCase();
+	const q = app.ui.searchQuery.trim().toLowerCase();
 	if (!q) return sortedSessions();
 	return sortedSessions().filter((s) => (s.title || "New Agent").toLowerCase().includes(q));
 }
@@ -18,7 +18,7 @@ export function sessionTitle(session) {
 }
 
 export function sessionProjectName(session) {
-	return basename(session.cwd || app.cwd || app.gitInfo.project);
+	return basename(session.cwd || app.session.cwd || app.project.gitInfo.project);
 }
 
 export function sessionStatus(session, { isActive, isRunning }) {

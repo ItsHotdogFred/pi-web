@@ -7,7 +7,7 @@ import { renderSessions } from "../dashboard/sessions.js";
 import { closeAllDropdowns } from "./dropdowns.js";
 
 function currentModelLabel() {
-	const match = app.models.find((model) => model.id === app.currentModelId);
+	const match = app.models.list.find((model) => model.id === app.models.currentModelId);
 	return match?.name || "Model";
 }
 
@@ -19,9 +19,9 @@ function syncModelLabels() {
 }
 
 export function filteredModels() {
-	const q = app.modelSearchQuery.trim().toLowerCase();
-	if (!q) return app.models;
-	return app.models.filter(
+	const q = app.models.searchQuery.trim().toLowerCase();
+	if (!q) return app.models.list;
+	return app.models.list.filter(
 		(model) =>
 			model.name.toLowerCase().includes(q) ||
 			model.id.toLowerCase().includes(q) ||
@@ -34,14 +34,14 @@ export function selectModel(modelId) {
 		closeAllDropdowns();
 		return;
 	}
-	if (modelId !== app.currentModelId) {
-		app.currentModelId = modelId;
-		app.pendingModelSelection = modelId;
+	if (modelId !== app.models.currentModelId) {
+		app.models.currentModelId = modelId;
+		app.models.pendingModelSelection = modelId;
 		syncModelLabels();
 		renderModelMenuList("model-menu-list");
 		renderModelMenuList("chat-model-menu-list");
-		if (app.ws?.readyState === WebSocket.OPEN) {
-			app.ws.send(JSON.stringify({ type: "set_model", value: modelId }));
+		if (app.connection.ws?.readyState === WebSocket.OPEN) {
+			app.connection.ws.send(JSON.stringify({ type: "set_model", value: modelId }));
 		}
 	}
 	closeAllDropdowns();
@@ -57,7 +57,7 @@ export function renderModelMenuList(listId = "model-menu-list") {
 	if (items.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "model-menu-empty";
-		empty.textContent = app.models.length ? "No models match your search" : "Waiting for Pi models…";
+		empty.textContent = app.models.list.length ? "No models match your search" : "Waiting for Pi models…";
 		list.appendChild(empty);
 		return;
 	}
@@ -65,7 +65,7 @@ export function renderModelMenuList(listId = "model-menu-list") {
 	for (const model of items) {
 		const btn = document.createElement("button");
 		btn.type = "button";
-		btn.className = "dropdown-item" + (model.id === app.currentModelId ? " selected" : "");
+		btn.className = "dropdown-item" + (model.id === app.models.currentModelId ? " selected" : "");
 		btn.innerHTML = `<span class="model-option-name">${escapeHtml(model.name)}</span>${model.description ? `<span class="model-option-desc">${escapeHtml(model.description)}</span>` : ""}`;
 		btn.addEventListener("click", () => selectModel(model.id));
 		list.appendChild(btn);
@@ -81,13 +81,13 @@ export function renderModelMenu() {
 
 export function setModels(payload) {
 	if (payload?.current) {
-		if (!app.pendingModelSelection || payload.current === app.pendingModelSelection) {
-			app.currentModelId = payload.current;
-			if (payload.current === app.pendingModelSelection) app.pendingModelSelection = null;
+		if (!app.models.pendingModelSelection || payload.current === app.models.pendingModelSelection) {
+			app.models.currentModelId = payload.current;
+			if (payload.current === app.models.pendingModelSelection) app.models.pendingModelSelection = null;
 		}
 	}
 	if (Array.isArray(payload?.models)) {
-		app.models = payload.models;
+		app.models.list = payload.models;
 	}
 	renderModelMenu();
 	if (Array.isArray(payload?.models)) renderSessions();
@@ -97,7 +97,7 @@ export function openModelDropdown(scope = "dashboard") {
 	const config = MODEL_SCOPES[scope];
 	if (!config) return;
 
-	if (app.models.length === 0) requestAgentDefaults();
+	if (app.models.list.length === 0) requestAgentDefaults();
 
 	const menu = $(config.menuId);
 	const dropdown = $(config.dropdownId);
@@ -107,10 +107,10 @@ export function openModelDropdown(scope = "dashboard") {
 	closeAllDropdowns();
 	if (wasOpen) return;
 
-	app.activeModelScope = scope;
+	app.models.activeScope = scope;
 	menu.classList.remove("hidden");
 	dropdown.classList.add("is-open");
-	app.modelSearchQuery = "";
+	app.models.searchQuery = "";
 	const modelSearch = $(config.searchId);
 	if (modelSearch) modelSearch.value = "";
 	renderModelMenuList(config.listId);
@@ -124,10 +124,10 @@ function setupModelSearchForScope(scope) {
 	modelSearch.dataset.ready = "1";
 
 	modelSearch.addEventListener("input", () => {
-		clearTimeout(app.modelSearchTimer);
-		app.modelSearchTimer = setTimeout(() => {
-			app.activeModelScope = scope;
-			app.modelSearchQuery = modelSearch.value;
+		clearTimeout(app.models.searchTimer);
+		app.models.searchTimer = setTimeout(() => {
+			app.models.activeScope = scope;
+			app.models.searchQuery = modelSearch.value;
 			renderModelMenuList(config.listId);
 		}, 120);
 	});

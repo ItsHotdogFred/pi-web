@@ -12,7 +12,7 @@ import { renderActivityFeed } from "../dashboard/activity.js";
 import { loadContributions } from "../dashboard/contributions.js";
 
 export function startSessionSwitchAnimation() {
-	if (app.sessionSwitchAnimating) {
+	if (app.session.sessionSwitchAnimating) {
 		if (!prefersReducedMotion() && chatAreaEl) {
 			chatAreaEl.classList.remove("view-entering");
 			if (!chatAreaEl.classList.contains("view-leaving")) {
@@ -22,15 +22,15 @@ export function startSessionSwitchAnimation() {
 		return;
 	}
 
-	app.sessionSwitchAnimating = true;
-	const token = ++app.sessionSwitchAnimationToken;
+	app.session.sessionSwitchAnimating = true;
+	const token = ++app.session.sessionSwitchAnimationToken;
 	if (prefersReducedMotion() || !chatAreaEl) return;
 	chatAreaEl.classList.remove("view-leaving", "view-entering", "session-switch-hidden");
 	chatAreaEl.classList.add("view-leaving");
 	chatAreaEl.addEventListener(
 		"animationend",
 		() => {
-			if (token !== app.sessionSwitchAnimationToken) return;
+			if (token !== app.session.sessionSwitchAnimationToken) return;
 			chatAreaEl.classList.remove("view-leaving");
 			chatAreaEl.classList.add("session-switch-hidden");
 		},
@@ -39,12 +39,12 @@ export function startSessionSwitchAnimation() {
 }
 
 export function finishSessionSwitchAnimation(requestId = null) {
-	if (requestId == null && app.activeSessionSwitchRequestId != null) return;
-	if (requestId != null && requestId !== app.activeSessionSwitchRequestId) return;
-	if (!app.sessionSwitchAnimating) return;
-	const token = ++app.sessionSwitchAnimationToken;
+	if (requestId == null && app.session.activeSessionSwitchRequestId != null) return;
+	if (requestId != null && requestId !== app.session.activeSessionSwitchRequestId) return;
+	if (!app.session.sessionSwitchAnimating) return;
+	const token = ++app.session.sessionSwitchAnimationToken;
 	if (prefersReducedMotion() || !chatAreaEl) {
-		app.sessionSwitchAnimating = false;
+		app.session.sessionSwitchAnimating = false;
 		return;
 	}
 	chatAreaEl.classList.remove("view-leaving", "session-switch-hidden");
@@ -52,29 +52,29 @@ export function finishSessionSwitchAnimation(requestId = null) {
 	chatAreaEl.addEventListener(
 		"animationend",
 		() => {
-			if (token !== app.sessionSwitchAnimationToken) return;
+			if (token !== app.session.sessionSwitchAnimationToken) return;
 			chatAreaEl.classList.remove("view-entering");
-			app.sessionSwitchAnimating = false;
+			app.session.sessionSwitchAnimating = false;
 		},
 		{ once: true },
 	);
 }
 
 export function cancelSessionSwitchAnimation() {
-	app.sessionSwitchAnimationToken++;
-	app.sessionSwitchAnimating = false;
-	app.activeSessionSwitchRequestId = null;
+	app.session.sessionSwitchAnimationToken++;
+	app.session.sessionSwitchAnimating = false;
+	app.session.activeSessionSwitchRequestId = null;
 	chatAreaEl?.classList.remove("view-leaving", "view-entering", "session-switch-hidden");
 }
 
 export function isStaleSwitchMessage(msg) {
-	return msg.requestId != null && msg.requestId !== app.activeSessionSwitchRequestId;
+	return msg.requestId != null && msg.requestId !== app.session.activeSessionSwitchRequestId;
 }
 
 export function showView(view, { animate = true } = {}) {
 	if (view !== "chat") cancelSessionSwitchAnimation();
-	const prevView = app.currentView;
-	if (view === prevView && !app.viewTransitioning) {
+	const prevView = app.ui.currentView;
+	if (view === prevView && !app.ui.viewTransitioning) {
 		document.querySelectorAll(".nav-item").forEach((el) => {
 			el.classList.toggle("active", el.dataset.view === view);
 		});
@@ -83,8 +83,8 @@ export function showView(view, { animate = true } = {}) {
 		return;
 	}
 
-	app.currentView = view;
-	if (view === "dashboard") app.animateActivityFeed = animate && activityFeedEl.childElementCount === 0;
+	app.ui.currentView = view;
+	if (view === "dashboard") app.ui.animateActivityFeed = animate && activityFeedEl.childElementCount === 0;
 
 	document.querySelectorAll(".nav-item").forEach((el) => {
 		el.classList.toggle("active", el.dataset.view === view);
@@ -103,7 +103,7 @@ export function showView(view, { animate = true } = {}) {
 		return;
 	}
 
-	app.viewTransitioning = true;
+	app.ui.viewTransitioning = true;
 	fromEl.classList.add("view-leaving");
 
 	fromEl.addEventListener(
@@ -119,7 +119,7 @@ export function showView(view, { animate = true } = {}) {
 				"animationend",
 				() => {
 					toEl.classList.remove("view-entering");
-					app.viewTransitioning = false;
+					app.ui.viewTransitioning = false;
 					if (view === "dashboard") renderActivityFeed();
 					if (view === "dashboard") void loadContributions();
 					renderContextUsage();

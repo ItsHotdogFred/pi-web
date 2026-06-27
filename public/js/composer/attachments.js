@@ -4,14 +4,14 @@ import { setBusy } from "../ui/status.js";
 import { escapeHtml } from "../utils/format.js";
 
 export function getAttachmentsFor(target) {
-	return target === chatInputEl ? app.chatAttachments : app.dashboardAttachments;
+	return target === chatInputEl ? app.composer.chatAttachments : app.composer.dashboardAttachments;
 }
 
 export function getPreviewContainerFor(target) {
 	return target === chatInputEl ? $("chat-attachment-previews") : $("attachment-previews");
 }
 
-export function renderAttachmentPreviews(target = app.attachTarget) {
+export function renderAttachmentPreviews(target = app.ui.attachTarget) {
 	const attachments = getAttachmentsFor(target);
 	const container = getPreviewContainerFor(target);
 	if (!container) return;
@@ -19,7 +19,7 @@ export function renderAttachmentPreviews(target = app.attachTarget) {
 	container.replaceChildren();
 	if (attachments.length === 0) {
 		container.classList.add("hidden");
-		setBusy(app.busy);
+		setBusy(app.ui.busy);
 		return;
 	}
 
@@ -40,7 +40,7 @@ export function renderAttachmentPreviews(target = app.attachTarget) {
 		});
 		container.appendChild(chip);
 	}
-	setBusy(app.busy);
+	setBusy(app.ui.busy);
 }
 
 export function handleImagePaste(event, target) {
@@ -59,7 +59,7 @@ export function handleImagePaste(event, target) {
 	return false;
 }
 
-export function addImageAttachment(file, target = app.attachTarget) {
+export function addImageAttachment(file, target = app.ui.attachTarget) {
 	if (!file || !file.type.startsWith("image/")) return;
 
 	const reader = new FileReader();
@@ -79,7 +79,7 @@ export function addImageAttachment(file, target = app.attachTarget) {
 	reader.readAsDataURL(file);
 }
 
-export function clearAttachments(target = app.attachTarget) {
+export function clearAttachments(target = app.ui.attachTarget) {
 	getAttachmentsFor(target).length = 0;
 	renderAttachmentPreviews(target);
 }

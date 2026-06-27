@@ -115,25 +115,25 @@ function renderContributionGraph(payload) {
 }
 
 export async function loadContributions({ refresh = false } = {}) {
-	if (!contribGraphWeeksEl || app.contributionsLoading) return;
+	if (!contribGraphWeeksEl || app.ui.contributionsLoading) return;
 
-	const requestId = ++app.contributionsRequestId;
-	app.contributionsLoading = true;
+	const requestId = ++app.ui.contributionsRequestId;
+	app.ui.contributionsLoading = true;
 
 	try {
 		const params = new URLSearchParams();
-		if (app.cwd) params.set("cwd", app.cwd);
+		if (app.session.cwd) params.set("cwd", app.session.cwd);
 		if (refresh) params.set("refresh", "1");
 		const query = params.toString();
 		const response = await fetch(`/api/contributions${query ? `?${query}` : ""}`);
 		if (!response.ok) throw new Error("Failed to load contributions");
 		const payload = await response.json();
-		if (requestId !== app.contributionsRequestId) return;
+		if (requestId !== app.ui.contributionsRequestId) return;
 		renderContributionGraph(payload);
 	} catch {
-		if (requestId !== app.contributionsRequestId) return;
+		if (requestId !== app.ui.contributionsRequestId) return;
 		if (contribGraphCountEl) contribGraphCountEl.textContent = "Could not load prompt activity";
 	} finally {
-		if (requestId === app.contributionsRequestId) app.contributionsLoading = false;
+		if (requestId === app.ui.contributionsRequestId) app.ui.contributionsLoading = false;
 	}
 }

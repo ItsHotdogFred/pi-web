@@ -14,9 +14,9 @@ import { closeAllDropdowns } from "../ui/dropdowns.js";
 import { invalidateProjectFiles } from "../composer/references.js";
 
 export function setProjectName(path) {
-	app.cwd = path || "";
-	app.gitInfo.project = basename(path);
-	app.gitInfo.path = path || app.gitInfo.path;
+	app.session.cwd = path || "";
+	app.project.gitInfo.project = basename(path);
+	app.project.gitInfo.path = path || app.project.gitInfo.path;
 	invalidateProjectFiles();
 	syncGitContext();
 	void loadContributions();
@@ -47,7 +47,7 @@ export function renderProjectMenu() {
 	list.replaceChildren();
 	clearProjectPathError();
 	const recent = loadRecentProjects();
-	const current = app.cwd || app.gitInfo.path;
+	const current = app.session.cwd || app.project.gitInfo.path;
 
 	if (pathInput && current) {
 		pathInput.placeholder = current;
@@ -87,7 +87,7 @@ export function showProjectPathError(message) {
 
 function chooseProject(path) {
 	closeAllDropdowns();
-	if (!path || path === app.cwd) return;
+	if (!path || path === app.session.cwd) return;
 	sendProjectPath(path);
 }
 
@@ -97,19 +97,19 @@ export function sendProjectPath(path) {
 		showProjectPathError("Enter an absolute folder path.");
 		return;
 	}
-	if (!app.ws || app.ws.readyState !== WebSocket.OPEN) {
+	if (!app.connection.ws || app.connection.ws.readyState !== WebSocket.OPEN) {
 		showProjectPathError("Not connected yet. Wait for Ready, then try again.");
 		return;
 	}
-	if (app.busy) {
+	if (app.ui.busy) {
 		showProjectPathError("Pi is still working. Wait for it to finish, then try again.");
 		return;
 	}
 
 	clearProjectPathError();
 	closeAllDropdowns();
-	app.pendingProjectPath = trimmed;
-	app.ws.send(JSON.stringify({ type: "set_cwd", path: trimmed }));
+	app.project.pendingPath = trimmed;
+	app.connection.ws.send(JSON.stringify({ type: "set_cwd", path: trimmed }));
 }
 
 export function reopenProjectMenu() {
@@ -119,19 +119,19 @@ export function reopenProjectMenu() {
 }
 
 export function resetForProjectSwitch(nextCwd) {
-	app.sessionId = null;
-	app.sessions = [];
-	app.commands = [];
-	app.models = [];
-	app.currentModelId = null;
-	app.pendingModelSelection = null;
-	app.defaultsRequested = false;
-	app.projectSwitchPending = true;
-	app.creatingSession = false;
-	app.awaitingNewAgentSession = false;
-	app.freshDashboardSession = false;
-	app.pendingDashboardPrompt = null;
-	app.pendingProjectPath = null;
+	app.session.sessionId = null;
+	app.session.sessions = [];
+	app.project.commands = [];
+	app.models.list = [];
+	app.models.currentModelId = null;
+	app.models.pendingModelSelection = null;
+	app.connection.defaultsRequested = false;
+	app.connection.projectSwitchPending = true;
+	app.session.creatingSession = false;
+	app.session.awaitingNewAgentSession = false;
+	app.session.freshDashboardSession = false;
+	app.session.pendingDashboardPrompt = null;
+	app.project.pendingPath = null;
 	clearChat();
 	showView("dashboard");
 	resetContextUsage();

@@ -12,51 +12,51 @@ import { setBusy } from "../ui/status.js";
 export function renderSessions() {
 	renderTodayList();
 	renderActivityFeed();
-	const active = app.sessions.find((s) => s.sessionId === app.sessionId);
+	const active = app.session.sessions.find((s) => s.sessionId === app.session.sessionId);
 	if (active) chatTitleEl.textContent = sessionTitle(active);
-	else if (app.sessionId) chatTitleEl.textContent = "New Agent";
+	else if (app.session.sessionId) chatTitleEl.textContent = "New Agent";
 }
 
 export function upsertSession(entry) {
-	const idx = app.sessions.findIndex((s) => s.sessionId === entry.sessionId);
+	const idx = app.session.sessions.findIndex((s) => s.sessionId === entry.sessionId);
 	if (idx >= 0) {
-		const merged = { ...app.sessions[idx], ...entry };
-		if (entry.title == null && app.sessions[idx].title) merged.title = app.sessions[idx].title;
-		app.sessions[idx] = merged;
+		const merged = { ...app.session.sessions[idx], ...entry };
+		if (entry.title == null && app.session.sessions[idx].title) merged.title = app.session.sessions[idx].title;
+		app.session.sessions[idx] = merged;
 	} else {
-		app.sessions.push(entry);
+		app.session.sessions.push(entry);
 	}
 	renderSessions();
 }
 
 export function openSession(id) {
-	if (id === app.sessionId && app.currentView === "chat") return;
-	if (app.busy && id !== app.sessionId) return;
-	app.awaitingNewAgentSession = false;
-	app.freshDashboardSession = false;
-	app.pendingDashboardPrompt = null;
+	if (id === app.session.sessionId && app.ui.currentView === "chat") return;
+	if (app.ui.busy && id !== app.session.sessionId) return;
+	app.session.awaitingNewAgentSession = false;
+	app.session.freshDashboardSession = false;
+	app.session.pendingDashboardPrompt = null;
 
-	const switchingSession = app.currentView === "chat" && id !== app.sessionId;
-	const requestId = switchingSession ? ++app.sessionSwitchRequestId : null;
+	const switchingSession = app.ui.currentView === "chat" && id !== app.session.sessionId;
+	const requestId = switchingSession ? ++app.session.sessionSwitchRequestId : null;
 	if (switchingSession) {
-		app.activeSessionSwitchRequestId = requestId;
+		app.session.activeSessionSwitchRequestId = requestId;
 		startSessionSwitchAnimation();
 	}
-	app.sessionId = id;
+	app.session.sessionId = id;
 	renderSessions();
 	switchSession(id, requestId);
 	showView("chat");
 }
 
 export function switchSession(id, requestId = null) {
-	if (!app.ws || app.ws.readyState !== WebSocket.OPEN) return;
-	app.ws.send(JSON.stringify({ type: "switch_session", sessionId: id, requestId }));
+	if (!app.connection.ws || app.connection.ws.readyState !== WebSocket.OPEN) return;
+	app.connection.ws.send(JSON.stringify({ type: "switch_session", sessionId: id, requestId }));
 }
 
 export function newSession() {
-	if (!app.ws || app.ws.readyState !== WebSocket.OPEN || app.creatingSession) return;
+	if (!app.connection.ws || app.connection.ws.readyState !== WebSocket.OPEN || app.session.creatingSession) return;
 	cancelSessionSwitchAnimation();
-	app.creatingSession = true;
-	setBusy(app.busy);
-	app.ws.send(JSON.stringify({ type: "new_session" }));
+	app.session.creatingSession = true;
+	setBusy(app.ui.busy);
+	app.connection.ws.send(JSON.stringify({ type: "new_session" }));
 }

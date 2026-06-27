@@ -1,15 +1,9 @@
 import { app } from "../state/store.js";
-import {
-	inlineFileRefsEl,
-	inlineFileRefsListEl,
-	chatInlineFileRefsEl,
-	chatInlineFileRefsListEl,
-	inputEl,
-	chatInputEl,
-} from "../dom/elements.js";
-import { animateEnter } from "../utils/animation.js";
+import { COMPOSER_SCOPES } from "../config.js";
+import { $ } from "../dom/elements.js";
 import { escapeHtml } from "../utils/format.js";
 import { getActiveInput } from "../chat/messages.js";
+import { createInlinePicker } from "./inlineList.js";
 
 function mentionContext(text, cursorPos) {
 	const before = text.slice(0, cursorPos);
@@ -34,9 +28,9 @@ function filteredFiles(entries, filter) {
 }
 
 export async function fetchProjectFiles() {
-	const cwd = app.cwd || app.gitInfo?.path || "";
-	if (app.projectFiles?.cwd === cwd && Array.isArray(app.projectFiles.entries)) {
-		return app.projectFiles.entries;
+	const cwd = app.session.cwd || app.project.gitInfo?.path || "";
+	if (app.composer.projectFiles?.cwd === cwd && Array.isArray(app.composer.projectFiles.entries)) {
+		return app.composer.projectFiles.entries;
 	}
 
 	try {
@@ -44,15 +38,15 @@ export async function fetchProjectFiles() {
 		const res = await fetch(`/api/files${query}`);
 		if (!res.ok) return [];
 		const data = await res.json();
-		app.projectFiles = { cwd: data.cwd ?? cwd, entries: data.files ?? [] };
-		return app.projectFiles.entries;
+		app.composer.projectFiles = { cwd: data.cwd ?? cwd, entries: data.files ?? [] };
+		return app.composer.projectFiles.entries;
 	} catch {
 		return [];
 	}
 }
 
 export function invalidateProjectFiles() {
-	app.projectFiles = null;
+	app.composer.projectFiles = null;
 }
 
 function insertReference(targetInput, context, entry) {
@@ -89,43 +83,59 @@ function renderFilesInto(listEl, entries, filter, onSelect) {
 	}
 }
 
-function updateFileReferencesFor(targetInput, containerEl, listEl) {
-	if (targetInput.value.startsWith("/")) {
-		containerEl.classList.remove("is-open");
-		containerEl.setAttribute("aria-hidden", "true");
-		return;
-	}
+function createFileRefsPicker(scope) {
+	const containerEl = $(scope.inlineFileRefsId);
+	const listEl = $(scope.inlineFileRefsListId);
+	if (!containerEl || !listEl) return null;
 
-	const cursor = targetInput.selectionStart ?? targetInput.value.length;
-	const context = mentionContext(targetInput.value, cursor);
-	const show = context !== null;
-	const wasHidden = !containerEl.classList.contains("is-open");
+	let mention = null;
 
-	containerEl.classList.toggle("is-open", show);
-	containerEl.setAttribute("aria-hidden", String(!show));
-
-	if (!show) {
-		listEl.classList.remove("anim-fade-down");
-		listEl.replaceChildren();
-		return;
-	}
-
-	if (wasHidden) animateEnter(listEl, "anim-fade-down");
-
-	void fetchProjectFiles().then((entries) => {
-		if (!containerEl.classList.contains("is-open")) return;
-		renderFilesInto(listEl, entries, context.filter, (entry) =>
-			insertReference(targetInput, context, entry),
-		);
+	return createInlinePicker({
+		containerEl,
+		listEl,
+		shouldShow(input) {
+			if (input.value.startsWith("/")) return false;
+			const cursor = input.selectionStart ?? input.value.length;
+			mention = mentionContext(input.value, cursor);
+			return mention !== null;
+		},
+		getFilter() {
+			return mention?.filter ?? "";
+		},
+		fetchItems() {
+			return fetchProjectFiles();
+		},
+		renderItems(listEl, entries, onSelect) {
+			renderFilesInto(listEl, entries, mention?.filter ?? "", onSelect);
+		},
+		onSelect(entry, input) {
+			if (mention) insertReference(input, mention, entry);
+		},
 	});
 }
 
+const pickersByScope = new Map();
+
+function getFileRefsPicker(scope) {
+	if (!pickersByScope.has(scope)) {
+		pickersByScope.set(scope, createFileRefsPicker(scope));
+	}
+	return pickersByScope.get(scope);
+}
+
+export function updateFileReferencesForScope(scope) {
+	const inputEl = $(scope.inputId);
+	const picker = getFileRefsPicker(scope);
+	if (!inputEl || !picker) return;
+	picker.update(inputEl);
+}
+
 export function updateInlineFileReferences() {
-	updateFileReferencesFor(inputEl, inlineFileRefsEl, inlineFileRefsListEl);
+	updateFileReferencesForScope(COMPOSER_SCOPES.dashboard);
 }
 
 export function updateChatFileReferences() {
-	updateFileReferencesFor(chatInputEl, chatInlineFileRefsEl, chatInlineFileRefsListEl);
+	updateFileReferencesForScope(COMPOSER_SCOPES.chat);
 }
 
 export function openFileReferences(targetInput = getActiveInput()) {
@@ -141,13 +151,7 @@ export function openFileReferences(targetInput = getActiveInput()) {
 }
 
 export function closeFileReferences() {
-	for (const [containerEl, listEl] of [
-		[inlineFileRefsEl, inlineFileRefsListEl],
-		[chatInlineFileRefsEl, chatInlineFileRefsListEl],
-	]) {
-		containerEl?.classList.remove("is-open");
-		containerEl?.setAttribute("aria-hidden", "true");
-		listEl?.classList.remove("anim-fade-down");
-		listEl?.replaceChildren();
+	for (const scope of Object.values(COMPOSER_SCOPES)) {
+		getFileRefsPicker(scope)?.close();
 	}
 }

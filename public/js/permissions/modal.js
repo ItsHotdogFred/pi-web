@@ -1,5 +1,6 @@
 import { app } from "../state/store.js";
 import {
+	$,
 	permissionModalEl,
 	permissionDialogEl,
 	permissionTitleEl,
@@ -8,6 +9,7 @@ import {
 } from "../dom/elements.js";
 import { formatRaw } from "../utils/format.js";
 import { normalizeToolName } from "../utils/tools.js";
+import { createModal } from "../ui/modal.js";
 
 function summarizeRawInput(rawInput) {
 	if (rawInput == null) return "";
@@ -29,17 +31,23 @@ function permissionToolName(tool) {
 	);
 }
 
-function setPermissionModalOpen(open) {
-	if (!permissionModalEl) return;
-	permissionModalEl.classList.toggle("hidden", !open);
-	permissionModalEl.setAttribute("aria-hidden", String(!open));
+let permissionModal = null;
+
+function getPermissionModal() {
+	if (!permissionModal && permissionModalEl) {
+		permissionModal = createModal({
+			el: permissionModalEl,
+			backdropEl: $("permission-backdrop"),
+			onClose: () => cancelActivePermissionRequest(),
+		});
+	}
+	return permissionModal;
 }
 
 function showPermissionModal(request) {
 	if (!permissionModalEl || !permissionTitleEl || !permissionActionsEl) return;
 
-	app.activePermissionRequest = request;
-	app.permissionPreviousFocus = document.activeElement;
+	app.permissions.activeRequest = request;
 
 	const toolName = permissionToolName(request.tool);
 	permissionTitleEl.textContent = `Allow ${toolName}?`;
@@ -71,43 +79,39 @@ function showPermissionModal(request) {
 		permissionActionsEl.appendChild(btn);
 	}
 
-	setPermissionModalOpen(true);
+	getPermissionModal().open();
 	permissionActionsEl.querySelector("button")?.focus();
 }
 
 function hidePermissionModal() {
-	setPermissionModalOpen(false);
-	app.activePermissionRequest = null;
-	if (app.permissionPreviousFocus?.focus) {
-		app.permissionPreviousFocus.focus();
-	}
-	app.permissionPreviousFocus = null;
+	getPermissionModal()?.close();
+	app.permissions.activeRequest = null;
 }
 
 function processPermissionQueue() {
-	if (app.activePermissionRequest || app.permissionQueue.length === 0) return;
-	showPermissionModal(app.permissionQueue.shift());
+	if (app.permissions.activeRequest || app.permissions.queue.length === 0) return;
+	showPermissionModal(app.permissions.queue.shift());
 }
 
 export function enqueuePermissionRequest(msg) {
-	app.permissionQueue.push(msg);
+	app.permissions.queue.push(msg);
 	processPermissionQueue();
 }
 
 function respondToPermission(requestId, optionId) {
-	if (!app.ws || app.ws.readyState !== WebSocket.OPEN) return;
-	app.ws.send(JSON.stringify({ type: "permission_response", requestId, optionId }));
+	if (!app.connection.ws || app.connection.ws.readyState !== WebSocket.OPEN) return;
+	app.connection.ws.send(JSON.stringify({ type: "permission_response", requestId, optionId }));
 	hidePermissionModal();
 	processPermissionQueue();
 }
 
 function cancelActivePermissionRequest() {
-	if (!app.activePermissionRequest) return;
-	if (app.ws?.readyState === WebSocket.OPEN) {
-		app.ws.send(
+	if (!app.permissions.activeRequest) return;
+	if (app.connection.ws?.readyState === WebSocket.OPEN) {
+		app.connection.ws.send(
 			JSON.stringify({
 				type: "permission_response",
-				requestId: app.activePermissionRequest.requestId,
+				requestId: app.permissions.activeRequest.requestId,
 				cancelled: true,
 			}),
 		);
@@ -117,8 +121,8 @@ function cancelActivePermissionRequest() {
 }
 
 export function clearPermissionRequests() {
-	app.permissionQueue = [];
-	if (app.activePermissionRequest) {
+	app.permissions.queue = [];
+	if (app.permissions.activeRequest) {
 		hidePermissionModal();
 	}
 }
@@ -137,12 +141,6 @@ export function initPermissionModal() {
 	if (!permissionDialogEl || !permissionActionsEl) return;
 
 	permissionDialogEl.addEventListener("keydown", (event) => {
-		if (event.key === "Escape") {
-			event.preventDefault();
-			cancelActivePermissionRequest();
-			return;
-		}
-
 		if (event.key !== "Tab") return;
 
 		const focusable = [...permissionActionsEl.querySelectorAll("button")];

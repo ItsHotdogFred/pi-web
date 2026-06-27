@@ -1,88 +1,37 @@
 import { app } from "../state/store.js";
 import {
 	$,
-	composerEl,
-	chatComposerEl,
 	inputEl,
-	chatInputEl,
 	cancelEl,
 	searchBtnEl,
 	sidebarSearchEl,
 	searchInputEl,
 	commandsHintEl,
-	attachBtnEl,
-	fileRefBtnEl,
 	fileInputEl,
 	contribGraphLearnEl,
 	contribGraphNoteEl,
 } from "../dom/elements.js";
-import { setBusy } from "../ui/status.js";
+import { COMPOSER_SCOPES } from "../config.js";
 import { showView, setNavActive } from "../ui/views.js";
 import { renderSessions } from "../dashboard/sessions.js";
 import { cycleActivityArtStyle } from "../dashboard/activity.js";
-import { sendPrompt } from "../wire/send.js";
 import { reconnect } from "../wire/websocket.js";
-import { resizeTextarea } from "../composer/textarea.js";
-import { addImageAttachment, handleImagePaste } from "../composer/attachments.js";
-import { updateInlineCommands, updateChatSlashCommands, openCommands, closeCommands } from "../commands/palette.js";
-import {
-	updateInlineFileReferences,
-	updateChatFileReferences,
-	openFileReferences,
-} from "../composer/references.js";
-import { renderFileContext } from "../chat/tools.js";
+import { addImageAttachment } from "../composer/attachments.js";
+import { bindAllComposers } from "../composer/bind.js";
+import { openCommands, closeCommands } from "../commands/palette.js";
+import { renderFileContext } from "../chat/fileContext.js";
 import { toggleProjectNote } from "../project/note.js";
 
+const composerInputs = () =>
+	Object.values(COMPOSER_SCOPES)
+		.map((scope) => $(scope.inputId))
+		.filter(Boolean);
+
 export function bindEvents() {
-	composerEl.addEventListener("submit", (e) => {
-		e.preventDefault();
-		sendPrompt(inputEl.value);
-	});
+	bindAllComposers();
 
-	chatComposerEl.addEventListener("submit", (e) => {
-		e.preventDefault();
-		sendPrompt(chatInputEl.value, true);
-	});
-
-	cancelEl.addEventListener("click", () => {
-		if (app.ws?.readyState === WebSocket.OPEN) app.ws.send(JSON.stringify({ type: "cancel" }));
-	});
-
-	inputEl.addEventListener("keydown", (e) => {
-		if (e.key === "Enter" && !e.shiftKey) {
-			e.preventDefault();
-			composerEl.requestSubmit();
-		}
-	});
-
-	inputEl.addEventListener("paste", (e) => {
-		app.attachTarget = inputEl;
-		handleImagePaste(e, inputEl);
-	});
-
-	inputEl.addEventListener("input", () => {
-		resizeTextarea(inputEl);
-		setBusy(app.busy);
-		updateInlineCommands();
-		updateInlineFileReferences();
-	});
-
-	chatInputEl.addEventListener("keydown", (e) => {
-		if (e.key === "Enter" && !e.shiftKey) {
-			e.preventDefault();
-			chatComposerEl.requestSubmit();
-		}
-	});
-
-	chatInputEl.addEventListener("paste", (e) => {
-		app.attachTarget = chatInputEl;
-		handleImagePaste(e, chatInputEl);
-	});
-
-	chatInputEl.addEventListener("input", () => {
-		resizeTextarea(chatInputEl);
-		updateChatSlashCommands();
-		updateChatFileReferences();
+	cancelEl?.addEventListener("click", () => {
+		if (app.connection.ws?.readyState === WebSocket.OPEN) app.connection.ws.send(JSON.stringify({ type: "cancel" }));
 	});
 
 	$("nav-dashboard").addEventListener("click", () => {
@@ -100,7 +49,7 @@ export function bindEvents() {
 	});
 
 	searchInputEl.addEventListener("input", () => {
-		app.searchQuery = searchInputEl.value;
+		app.ui.searchQuery = searchInputEl.value;
 		renderSessions();
 	});
 
@@ -123,43 +72,23 @@ export function bindEvents() {
 			toggleProjectNote();
 			return;
 		}
-		if (e.key === "/" && document.activeElement !== inputEl && document.activeElement !== chatInputEl) {
+		if (e.key === "/" && !composerInputs().includes(document.activeElement)) {
 			e.preventDefault();
 			openCommands();
 		}
 	});
 
-	attachBtnEl.addEventListener("click", () => {
-		app.attachTarget = inputEl;
-		fileInputEl.click();
-	});
-
-	fileRefBtnEl?.addEventListener("click", () => {
-		app.attachTarget = inputEl;
-		openFileReferences(inputEl);
-	});
-
-	$("chat-attach-btn")?.addEventListener("click", () => {
-		app.attachTarget = chatInputEl;
-		fileInputEl.click();
-	});
-
-	$("chat-file-ref-btn")?.addEventListener("click", () => {
-		app.attachTarget = chatInputEl;
-		openFileReferences(chatInputEl);
-	});
-
 	fileInputEl.addEventListener("change", () => {
 		const file = fileInputEl.files?.[0];
-		if (file && app.attachTarget) {
-			addImageAttachment(file, app.attachTarget);
-			app.attachTarget.focus();
+		if (file && app.ui.attachTarget) {
+			addImageAttachment(file, app.ui.attachTarget);
+			app.ui.attachTarget.focus();
 		}
 		fileInputEl.value = "";
 	});
 
 	$("file-context-toggle")?.addEventListener("click", () => {
-		app.fileContextCollapsed = !app.fileContextCollapsed;
+		app.chat.fileContextCollapsed = !app.chat.fileContextCollapsed;
 		renderFileContext();
 	});
 

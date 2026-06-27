@@ -74,38 +74,38 @@ export function couldBeStartupPartial(buffer) {
 }
 
 export function resetStartupSuppression() {
-	app.startupBuffer = "";
-	app.startupInfoSkipped = false;
-	app.suppressStartupDump = false;
-	app.startupBufferChunks = 0;
+	app.connection.startupBuffer = "";
+	app.connection.startupInfoSkipped = false;
+	app.connection.suppressStartupDump = false;
+	app.connection.startupBufferChunks = 0;
 }
 
 export function shouldSkipStartupContent(text) {
-	if (!app.suppressStartupDump && app.connectionState !== "connecting") return false;
-	if (app.startupInfoSkipped) return false;
-	app.startupBuffer += text;
-	app.startupBufferChunks++;
-	if (isPiStartupDump(app.startupBuffer)) {
-		app.startupInfoSkipped = true;
-		app.startupBuffer = "";
-		app.startupBufferChunks = 0;
+	if (!app.connection.suppressStartupDump && app.connection.connectionState !== "connecting") return false;
+	if (app.connection.startupInfoSkipped) return false;
+	app.connection.startupBuffer += text;
+	app.connection.startupBufferChunks++;
+	if (isPiStartupDump(app.connection.startupBuffer)) {
+		app.connection.startupInfoSkipped = true;
+		app.connection.startupBuffer = "";
+		app.connection.startupBufferChunks = 0;
 		return true;
 	}
-	if (app.startupBuffer.includes("## Skills")) {
-		app.startupInfoSkipped = true;
-		app.startupBuffer = "";
-		app.startupBufferChunks = 0;
+	if (app.connection.startupBuffer.includes("## Skills")) {
+		app.connection.startupInfoSkipped = true;
+		app.connection.startupBuffer = "";
+		app.connection.startupBufferChunks = 0;
 		return true;
 	}
-	if (app.startupBufferChunks >= 8) {
-		app.startupInfoSkipped = true;
-		app.startupBuffer = "";
-		app.startupBufferChunks = 0;
+	if (app.connection.startupBufferChunks >= 8) {
+		app.connection.startupInfoSkipped = true;
+		app.connection.startupBuffer = "";
+		app.connection.startupBufferChunks = 0;
 		return false;
 	}
-	if (couldBeStartupPartial(app.startupBuffer)) return true;
-	app.startupBuffer = "";
-	app.startupBufferChunks = 0;
+	if (couldBeStartupPartial(app.connection.startupBuffer)) return true;
+	app.connection.startupBuffer = "";
+	app.connection.startupBufferChunks = 0;
 	return false;
 }
 

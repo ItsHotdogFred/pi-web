@@ -74,8 +74,8 @@ function setContextPopoverOpen(open) {
 export function renderContextUsage() {
 	if (!contextDialWrapEl) return;
 
-	const { used, size, percent, breakdown } = app.contextUsage;
-	const show = Boolean(app.sessionId && app.currentView === "chat");
+	const { used, size, percent, breakdown } = app.ui.contextUsage;
+	const show = Boolean(app.session.sessionId && app.ui.currentView === "chat");
 	contextDialWrapEl.classList.toggle("hidden", !show);
 	if (!show) {
 		setContextPopoverOpen(false);
@@ -105,24 +105,24 @@ export function renderContextUsage() {
 
 	if (contextActionsEl) {
 		const showActions =
-			Boolean(app.sessionId) && app.currentView === "chat" && percent != null && percent >= 70;
+			Boolean(app.session.sessionId) && app.ui.currentView === "chat" && percent != null && percent >= 70;
 		contextActionsEl.classList.toggle("hidden", !showActions);
 		contextActionsEl.classList.toggle("context-actions--high", level === "high");
 	}
 
 	if (contextCompactBtnEl) {
-		const compacting = app.contextCompactPending && app.busy;
-		contextCompactBtnEl.disabled = app.busy || app.creatingSession || app.contextCompactPending;
+		const compacting = app.ui.contextCompactPending && app.ui.busy;
+		contextCompactBtnEl.disabled = app.ui.busy || app.session.creatingSession || app.ui.contextCompactPending;
 		contextCompactBtnEl.textContent = compacting ? "Compacting…" : "Compact now";
 	}
 
 	if (contextNewSessionBtnEl) {
-		contextNewSessionBtnEl.disabled = app.busy || app.creatingSession;
+		contextNewSessionBtnEl.disabled = app.ui.busy || app.session.creatingSession;
 	}
 }
 
 export function setContextUsage(next) {
-	const prev = app.contextUsage;
+	const prev = app.ui.contextUsage;
 	const used = next?.used ?? prev.used ?? null;
 	const size = next?.size ?? prev.size ?? null;
 	let percent = next?.percent ?? prev.percent ?? null;
@@ -131,7 +131,7 @@ export function setContextUsage(next) {
 	if (percent == null && used != null && size != null && size > 0) {
 		percent = (used / size) * 100;
 	}
-	app.contextUsage = { used, size, percent, breakdown };
+	app.ui.contextUsage = { used, size, percent, breakdown };
 	renderContextUsage();
 }
 
@@ -143,13 +143,13 @@ export function initContextDialPopover() {
 	if (!contextDialWrapEl || !contextPopoverEl) return;
 
 	const openPopover = () => {
-		clearTimeout(app.contextPopoverTimer);
+		clearTimeout(app.ui.contextPopoverTimer);
 		setContextPopoverOpen(true);
 	};
 
 	const closePopover = () => {
-		clearTimeout(app.contextPopoverTimer);
-		app.contextPopoverTimer = setTimeout(() => setContextPopoverOpen(false), 120);
+		clearTimeout(app.ui.contextPopoverTimer);
+		app.ui.contextPopoverTimer = setTimeout(() => setContextPopoverOpen(false), 120);
 	};
 
 	contextDialWrapEl.addEventListener("mouseenter", openPopover);
@@ -162,18 +162,18 @@ export function initContextDialPopover() {
 	contextCompactBtnEl?.addEventListener("click", (event) => {
 		event.preventDefault();
 		event.stopPropagation();
-		if (!app.ws || app.ws.readyState !== WebSocket.OPEN || app.busy || app.creatingSession || app.contextCompactPending) return;
-		app.contextCompactPending = true;
+		if (!app.connection.ws || app.connection.ws.readyState !== WebSocket.OPEN || app.ui.busy || app.session.creatingSession || app.ui.contextCompactPending) return;
+		app.ui.contextCompactPending = true;
 		renderContextUsage();
 		setStatus("busy");
-		app.ws.send(JSON.stringify({ type: "compact" }));
+		app.connection.ws.send(JSON.stringify({ type: "compact" }));
 	});
 
 	contextNewSessionBtnEl?.addEventListener("click", async (event) => {
 		event.preventDefault();
 		event.stopPropagation();
-		if (!app.ws || app.ws.readyState !== WebSocket.OPEN || app.busy || app.creatingSession) return;
-		const percent = app.contextUsage.percent ?? 0;
+		if (!app.connection.ws || app.connection.ws.readyState !== WebSocket.OPEN || app.ui.busy || app.session.creatingSession) return;
+		const percent = app.ui.contextUsage.percent ?? 0;
 		if (percent < 90) {
 			const ok = confirm("Start a fresh session? Your current conversation will remain in history.");
 			if (!ok) return;

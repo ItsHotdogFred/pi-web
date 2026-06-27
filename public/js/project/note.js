@@ -9,20 +9,27 @@ import {
 	projectNoteTitleEl,
 } from "../dom/elements.js";
 import { basename } from "../utils/format.js";
+import { createModal } from "../ui/modal.js";
 
 const SAVE_DEBOUNCE_MS = 500;
-let noteOpen = false;
 let noteLoadedCwd = "";
 let noteDirty = false;
 let noteSaveTimer = null;
 let noteSaveRequestId = 0;
-let notePreviousFocus = null;
 
-function setNoteModalOpen(open) {
-	if (!projectNoteModalEl) return;
-	noteOpen = open;
-	projectNoteModalEl.classList.toggle("hidden", !open);
-	projectNoteModalEl.setAttribute("aria-hidden", String(!open));
+let projectNoteModal = null;
+
+function getProjectNoteModal() {
+	if (!projectNoteModal && projectNoteModalEl) {
+		projectNoteModal = createModal({
+			el: projectNoteModalEl,
+			backdropEl: projectNoteBackdropEl,
+			onClose: () => {
+				void closeProjectNote();
+			},
+		});
+	}
+	return projectNoteModal;
 }
 
 function setNoteStatus(text) {
@@ -62,13 +69,13 @@ function flushNoteSave() {
 		clearTimeout(noteSaveTimer);
 		noteSaveTimer = null;
 	}
-	if (!noteDirty || !noteOpen) return Promise.resolve();
+	if (!noteDirty || !getProjectNoteModal()?.isOpen()) return Promise.resolve();
 	return persistNote();
 }
 
 async function persistNote() {
 	if (!projectNoteInputEl) return;
-	const cwd = app.cwd || app.gitInfo.path;
+	const cwd = app.session.cwd || app.project.gitInfo.path;
 	if (!cwd) return;
 
 	const content = projectNoteInputEl.value;
@@ -78,13 +85,13 @@ async function persistNote() {
 
 	try {
 		const payload = await saveProjectNote(cwd, content);
-		if (requestId !== noteSaveRequestId || !noteOpen) return;
+		if (requestId !== noteSaveRequestId || !getProjectNoteModal()?.isOpen()) return;
 		if (projectNotePathEl && payload.path) {
 			projectNotePathEl.textContent = payload.path;
 		}
 		setNoteStatus("Saved");
 	} catch (error) {
-		if (requestId !== noteSaveRequestId || !noteOpen) return;
+		if (requestId !== noteSaveRequestId || !getProjectNoteModal()?.isOpen()) return;
 		noteDirty = true;
 		const message = error instanceof Error ? error.message : "Could not save";
 		setNoteStatus(message);
@@ -131,14 +138,13 @@ async function loadNoteIntoModal(cwd) {
 export async function openProjectNote() {
 	if (!projectNoteModalEl || !projectNoteInputEl) return;
 
-	const cwd = app.cwd || app.gitInfo.path;
+	const cwd = app.session.cwd || app.project.gitInfo.path;
 	if (!cwd) {
 		setNoteStatus("Pick a project first");
 		return;
 	}
 
-	notePreviousFocus = document.activeElement;
-	setNoteModalOpen(true);
+	getProjectNoteModal()?.open();
 
 	if (cwd !== noteLoadedCwd) {
 		await loadNoteIntoModal(cwd);
@@ -148,19 +154,14 @@ export async function openProjectNote() {
 }
 
 export async function closeProjectNote() {
-	if (!noteOpen) return;
+	if (!getProjectNoteModal()?.isOpen()) return;
 	await flushNoteSave();
-	setNoteModalOpen(false);
+	getProjectNoteModal()?.close();
 	noteLoadedCwd = "";
-	const focusTarget = notePreviousFocus;
-	notePreviousFocus = null;
-	if (focusTarget instanceof HTMLElement && document.contains(focusTarget)) {
-		focusTarget.focus();
-	}
 }
 
 export function toggleProjectNote() {
-	if (noteOpen) {
+	if (getProjectNoteModal()?.isOpen()) {
 		void closeProjectNote();
 	} else {
 		void openProjectNote();
@@ -168,16 +169,12 @@ export function toggleProjectNote() {
 }
 
 export function reloadProjectNoteIfOpen() {
-	if (!noteOpen) return;
+	if (!getProjectNoteModal()?.isOpen()) return;
 	noteLoadedCwd = "";
-	void loadNoteIntoModal(app.cwd || app.gitInfo.path);
+	void loadNoteIntoModal(app.session.cwd || app.project.gitInfo.path);
 }
 
 export function initProjectNote() {
-	projectNoteBackdropEl?.addEventListener("click", () => {
-		void closeProjectNote();
-	});
-
 	projectNoteCloseEl?.addEventListener("click", () => {
 		void closeProjectNote();
 	});
@@ -185,15 +182,8 @@ export function initProjectNote() {
 	projectNoteInputEl?.addEventListener("input", () => {
 		scheduleNoteSave();
 	});
-
-	projectNoteModalEl?.addEventListener("keydown", (event) => {
-		if (event.key === "Escape") {
-			event.preventDefault();
-			void closeProjectNote();
-		}
-	});
 }
 
 export function isProjectNoteOpen() {
-	return noteOpen;
+	return getProjectNoteModal()?.isOpen() ?? false;
 }

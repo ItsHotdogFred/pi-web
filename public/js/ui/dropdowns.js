@@ -8,7 +8,7 @@ import { setupModelSearch, renderModelMenu, openModelDropdown } from "./models.j
 export function closeAllDropdowns() {
 	document.querySelectorAll(".dropdown-menu").forEach((menu) => menu.classList.add("hidden"));
 	document.querySelectorAll(".dropdown.is-open").forEach((dropdown) => dropdown.classList.remove("is-open"));
-	app.modelSearchQuery = "";
+	app.models.searchQuery = "";
 	for (const scope of Object.values(MODEL_SCOPES)) {
 		const search = $(scope.searchId);
 		if (search) search.value = "";
