@@ -2,6 +2,7 @@ import * as acp from "@agentclientprotocol/sdk";
 
 import { MAX_PROMPT_BYTES } from "../../config.js";
 import { invalidateContributionsCache } from "../../analytics/contributions.js";
+import { invalidateSessionStatsCache } from "../../sessions/sessionStats.js";
 import { sendJson } from "../../wire/send.js";
 import { cancelAllPendingPermissions } from "./permissions.js";
 import { createSession, refreshSessions } from "./lifecycle.js";
@@ -54,6 +55,7 @@ export async function handlePrompt(session, text, images = []) {
 
 		await session.session.prompt(prompt);
 		invalidateContributionsCache(session.cwd);
+		invalidateSessionStatsCache(session.cwd);
 		void refreshSessions(session);
 	} catch (error) {
 		session.busy = false;
@@ -80,6 +82,7 @@ export async function compactSession(session, customInstructions) {
 	try {
 		await session.session.prompt(prompt);
 		invalidateContributionsCache(session.cwd);
+		invalidateSessionStatsCache(session.cwd);
 		void refreshSessions(session);
 	} catch (error) {
 		session.busy = false;

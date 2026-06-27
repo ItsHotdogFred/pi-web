@@ -2,11 +2,12 @@ import { app } from "../state/store.js";
 import { $, messagesEl, inputEl, chatInputEl } from "../dom/elements.js";
 import { animateEnter } from "../utils/animation.js";
 import { escapeHtml } from "../utils/format.js";
-import { enhanceAssistantCodeBlocks, renderMarkdown } from "../utils/markdown.js";
+import { enhanceRenderedMarkdown, renderMarkdown } from "../utils/markdown.js";
 import { resetContextUsage } from "../context/dial.js";
 import { clearChangedFiles } from "./fileContext.js";
 import { resetPlanPanel } from "./planPanel.js";
 import { clearPendingUserMessage } from "./history.js";
+import { clearPromptHistory, registerUserPrompt, rebuildPromptHistory } from "./promptHistory.js";
 
 export function getActiveInput() {
 	return app.ui.currentView === "chat" ? chatInputEl : inputEl;
@@ -22,11 +23,14 @@ export function clearChat() {
 	messagesEl.replaceChildren();
 	app.chat.toolCards.clear();
 	clearPendingUserMessage();
+	clearPromptHistory();
 	finalizeAssistantTurn();
 	resetPlanPanel();
 	clearChangedFiles();
 	resetContextUsage();
 }
+
+export { rebuildPromptHistory };
 
 export function addUserMessage(text, images = []) {
 	resetPlanPanel();
@@ -43,6 +47,7 @@ export function addUserMessage(text, images = []) {
 	const textHtml = text ? `<div class="msg-content">${renderMarkdown(text)}</div>` : "";
 	article.innerHTML = `${imagesHtml}${textHtml}`;
 	messagesEl.appendChild(article);
+	registerUserPrompt(article, text, { hasImages: images.length > 0 });
 	animateEnter(article, "anim-fade-up");
 	scrollToBottom();
 }
@@ -63,7 +68,9 @@ export function addSystemMessage(kind, label, html) {
 	article.className = `msg msg-${kind}`;
 	const labelHtml = label ? `<span class="msg-label">${label}</span>` : "";
 	article.innerHTML = `${labelHtml}<div class="msg-content">${html}</div>`;
-	if (kind === "assistant") enhanceAssistantCodeBlocks(article.querySelector(".msg-content"));
+	if (kind === "assistant" || kind === "thought") {
+		enhanceRenderedMarkdown(article.querySelector(".msg-content"));
+	}
 	appendChatNode(article);
 	animateEnter(article, "anim-fade-up");
 	return article;
@@ -75,7 +82,7 @@ let markdownRenderScheduled = false;
 let markdownRenderTimer = null;
 const pendingMarkdownBlocks = new Map();
 
-export function flushMarkdownRender() {
+export function flushMarkdownRender({ renderMermaid = false } = {}) {
 	if (markdownRenderTimer !== null) {
 		clearTimeout(markdownRenderTimer);
 		markdownRenderTimer = null;
@@ -86,7 +93,9 @@ export function flushMarkdownRender() {
 		const content = block.querySelector(".msg-content");
 		if (!content?.isConnected) continue;
 		content.innerHTML = renderMarkdown(getText());
-		if (block.classList.contains("msg-assistant")) enhanceAssistantCodeBlocks(content);
+		if (block.classList.contains("msg-assistant") || block.classList.contains("msg-thought")) {
+			enhanceRenderedMarkdown(content, { renderMermaid });
+		}
 	}
 	pendingMarkdownBlocks.clear();
 	scrollToBottom();
@@ -113,7 +122,7 @@ export function appendThoughtChunk(text) {
 }
 
 export function finalizeThoughtBlock() {
-	flushMarkdownRender();
+	flushMarkdownRender({ renderMermaid: true });
 	app.chat.thoughtBlock = null;
 	app.chat.thoughtText = "";
 }
@@ -133,7 +142,7 @@ export function appendAssistantChunk(text) {
 }
 
 export function finalizeAssistantTurn() {
-	flushMarkdownRender();
+	flushMarkdownRender({ renderMermaid: true });
 	finalizeThoughtBlock();
 	app.chat.assistantBlock = null;
 	app.chat.assistantText = "";

@@ -8,7 +8,7 @@ const MODAL_CONFIGS = [
 		buildContent(dialog) {
 			dialog.innerHTML = `
 				<h2 class="permission-title" id="permission-title">Allow tool?</h2>
-				<pre class="permission-details hidden" id="permission-details"></pre>
+				<div class="permission-details hidden" id="permission-details"></div>
 				<div class="permission-actions" id="permission-actions"></div>
 			`;
 		},
@@ -55,6 +55,29 @@ const MODAL_CONFIGS = [
 				<div class="permission-actions project-note-actions">
 					<span class="project-note-hint">Ctrl/Cmd+Shift+N</span>
 					<button type="button" class="permission-btn" id="project-note-close">Close</button>
+				</div>
+			`;
+		},
+	},
+	{
+		id: "diff-review-modal",
+		backdropId: "diff-review-backdrop",
+		dialogId: "diff-review-dialog",
+		dialogClass: "diff-review-dialog",
+		ariaLabelledBy: "diff-review-title",
+		buildContent(dialog) {
+			dialog.innerHTML = `
+				<div class="diff-review-header">
+					<h2 class="permission-title" id="diff-review-title">Review changes</h2>
+					<span class="diff-review-count" id="diff-review-count"></span>
+					<button type="button" class="diff-review-close" id="diff-review-close" aria-label="Close">&times;</button>
+				</div>
+				<div class="diff-review-body">
+					<ul class="diff-review-files" id="diff-review-files" role="listbox" aria-label="Changed files" tabindex="0"></ul>
+					<div class="diff-review-pane">
+						<p class="diff-review-path" id="diff-review-path"></p>
+						<div class="diff-review-content" id="diff-review-content"></div>
+					</div>
 				</div>
 			`;
 		},

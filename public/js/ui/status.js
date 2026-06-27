@@ -9,6 +9,7 @@ import {
 } from "../dom/elements.js";
 import { renderContextUsage } from "../context/dial.js";
 import { dismissSplash, setSplashStatus } from "./splash.js";
+import { setTabStatus, flashTabStatus, clearTabErrorStatus } from "./tabStatus.js";
 
 export function setStatus(state, detail = "") {
 	const splashLabels = {
@@ -35,9 +36,16 @@ export function setStatus(state, detail = "") {
 		labelEl.textContent = labels[state] ?? state;
 	}
 	if (state === "error" && detail) app.connection.lastError = detail;
+
+	if (state === "error") {
+		setTabStatus("error");
+	} else if (state === "ready") {
+		clearTabErrorStatus();
+	}
 }
 
 export function setBusy(nextBusy) {
+	const wasBusy = app.ui.busy;
 	if (nextBusy) app.connection.wasBusyForNotification = true;
 	app.ui.busy = nextBusy;
 	const connected = app.connection.ws && app.connection.ws.readyState === WebSocket.OPEN;
@@ -49,4 +57,12 @@ export function setBusy(nextBusy) {
 	sendEl?.classList.toggle("hidden", !canSendDashboard);
 	cancelEl?.classList.toggle("hidden", !app.ui.busy);
 	renderContextUsage();
+
+	if (nextBusy) {
+		setTabStatus("working");
+	} else if (wasBusy) {
+		flashTabStatus("done");
+	} else {
+		setTabStatus("idle");
+	}
 }

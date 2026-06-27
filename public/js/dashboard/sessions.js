@@ -1,5 +1,5 @@
 import { app } from "../state/store.js";
-import { chatTitleEl } from "../dom/elements.js";
+import { chatTitleEl, sidebarSearchEl } from "../dom/elements.js";
 import { sessionTitle } from "./sessionHelpers.js";
 import { renderTodayList, renderActivityFeed } from "./activity.js";
 import {
@@ -8,13 +8,16 @@ import {
 	cancelSessionSwitchAnimation,
 } from "../ui/views.js";
 import { setBusy } from "../ui/status.js";
+import { refreshTabBaseTitle } from "../ui/tabStatus.js";
 
 export function renderSessions() {
+	sidebarSearchEl?.classList.toggle("search-loading", app.ui.sessionSearchLoading);
 	renderTodayList();
 	renderActivityFeed();
 	const active = app.session.sessions.find((s) => s.sessionId === app.session.sessionId);
 	if (active) chatTitleEl.textContent = sessionTitle(active);
 	else if (app.session.sessionId) chatTitleEl.textContent = "New Agent";
+	refreshTabBaseTitle();
 }
 
 export function upsertSession(entry) {

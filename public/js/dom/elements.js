@@ -11,6 +11,7 @@ export const dashboardViewEl = $("dashboard-view");
 export const chatViewEl = $("chat-view");
 export const chatAreaEl = $("chat-area");
 export const messagesEl = $("messages");
+export const promptHistoryListEl = $("prompt-history-list");
 export const statusEl = $("status");
 export const chatStatusEl = $("chat-status");
 export const projectNameEl = $("project-name");
@@ -72,6 +73,14 @@ export function refreshDomRefs() {
 	projectNoteStatusEl = $("project-note-status");
 	projectNoteInputEl = $("project-note-input");
 	projectNoteCloseEl = $("project-note-close");
+
+	diffReviewModalEl = $("diff-review-modal");
+	diffReviewBackdropEl = $("diff-review-backdrop");
+	diffReviewCloseEl = $("diff-review-close");
+	diffReviewCountEl = $("diff-review-count");
+	diffReviewFilesEl = $("diff-review-files");
+	diffReviewPathEl = $("diff-review-path");
+	diffReviewContentEl = $("diff-review-content");
 }
 
 export const fileContextEl = $("file-context");
@@ -100,3 +109,11 @@ export let projectNotePathEl;
 export let projectNoteStatusEl;
 export let projectNoteInputEl;
 export let projectNoteCloseEl;
+
+export let diffReviewModalEl;
+export let diffReviewBackdropEl;
+export let diffReviewCloseEl;
+export let diffReviewCountEl;
+export let diffReviewFilesEl;
+export let diffReviewPathEl;
+export let diffReviewContentEl;

@@ -7,19 +7,10 @@ import {
 	permissionDetailsEl,
 	permissionActionsEl,
 } from "../dom/elements.js";
-import { formatRaw } from "../utils/format.js";
 import { normalizeToolName } from "../utils/tools.js";
 import { createModal } from "../ui/modal.js";
-
-function summarizeRawInput(rawInput) {
-	if (rawInput == null) return "";
-	const text = formatRaw(rawInput);
-	if (!text) return "";
-	const lines = text.split("\n");
-	if (lines.length > 6) return `${lines.slice(0, 6).join("\n")}\n…`;
-	if (text.length > 400) return `${text.slice(0, 400)}…`;
-	return text;
-}
+import { setTabStatus, clearTabPermissionStatus } from "../ui/tabStatus.js";
+import { buildPermissionPreview } from "./preview.js";
 
 function permissionToolName(tool) {
 	if (!tool || typeof tool !== "object") return "tool";
@@ -52,13 +43,17 @@ function showPermissionModal(request) {
 	const toolName = permissionToolName(request.tool);
 	permissionTitleEl.textContent = `Allow ${toolName}?`;
 
-	const details = summarizeRawInput(request.tool?.rawInput);
+	const preview = buildPermissionPreview(request.tool);
 	if (permissionDetailsEl) {
-		if (details) {
-			permissionDetailsEl.textContent = details;
+		if (preview) {
+			if (preview.type === "text") {
+				permissionDetailsEl.textContent = preview.text;
+			} else {
+				permissionDetailsEl.innerHTML = preview.html;
+			}
 			permissionDetailsEl.classList.remove("hidden");
 		} else {
-			permissionDetailsEl.textContent = "";
+			permissionDetailsEl.replaceChildren();
 			permissionDetailsEl.classList.add("hidden");
 		}
 	}
@@ -81,11 +76,13 @@ function showPermissionModal(request) {
 
 	getPermissionModal().open();
 	permissionActionsEl.querySelector("button")?.focus();
+	setTabStatus("permission");
 }
 
 function hidePermissionModal() {
 	getPermissionModal()?.close();
 	app.permissions.activeRequest = null;
+	clearTabPermissionStatus();
 }
 
 function processPermissionQueue() {

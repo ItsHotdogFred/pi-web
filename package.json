@@ -21,6 +21,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.29.0",
     "marked": "^15.0.12",
+    "mermaid": "^11.16.0",
     "patch-package": "^8.0.1",
     "pi-acp": "^0.0.31",
     "ws": "^8.18.1"

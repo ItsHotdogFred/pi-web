@@ -14,6 +14,7 @@ import {
 import { COMPOSER_SCOPES } from "../config.js";
 import { showView, setNavActive } from "../ui/views.js";
 import { renderSessions } from "../dashboard/sessions.js";
+import { searchSessionsDebounced, clearSessionSearch } from "../dashboard/sessionSearch.js";
 import { cycleActivityArtStyle } from "../dashboard/activity.js";
 import { reconnect } from "../wire/websocket.js";
 import { addImageAttachment } from "../composer/attachments.js";
@@ -50,6 +51,9 @@ export function bindEvents() {
 
 	searchInputEl.addEventListener("input", () => {
 		app.ui.searchQuery = searchInputEl.value;
+		const q = app.ui.searchQuery.trim();
+		if (q.length >= 2) searchSessionsDebounced(q);
+		else clearSessionSearch();
 		renderSessions();
 	});
 

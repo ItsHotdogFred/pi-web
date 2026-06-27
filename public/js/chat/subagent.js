@@ -1,3 +1,4 @@
+import { app } from "../state/store.js";
 import {
 	formatRaw,
 	parseRawObject,
@@ -8,7 +9,7 @@ import {
 	resolveToolName,
 	formatSubagentToolCall,
 } from "../utils/tools.js";
-import { renderMarkdown } from "../utils/markdown.js";
+import { enhanceRenderedMarkdown, renderMarkdown } from "../utils/markdown.js";
 
 export function isSubagentTool(state) {
 	return resolveToolName(state).toLowerCase() === "subagent";
@@ -95,6 +96,112 @@ function subagentStatusLabel(details, toolRunning) {
 	return "done";
 }
 
+function subagentResultCount(details, input) {
+	if (details?.results?.length) return details.results.length;
+	if (Array.isArray(input?.chain)) return input.chain.length;
+	if (Array.isArray(input?.tasks)) return input.tasks.length;
+	if (input?.agent) return 1;
+	return 0;
+}
+
+function subagentLayoutMode(details, input) {
+	if (details?.mode) return details.mode;
+	if (Array.isArray(input?.chain)) return "chain";
+	if (Array.isArray(input?.tasks)) return "parallel";
+	return null;
+}
+
+function defaultSubagentView(details, input) {
+	const count = subagentResultCount(details, input);
+	const mode = subagentLayoutMode(details, input);
+	if (count >= 2 && (mode === "parallel" || mode === "chain")) return "swimlane";
+	return "list";
+}
+
+function getSubagentViewMode(card, details, input) {
+	const stored = card.dataset.subagentView;
+	if (stored === "list" || stored === "swimlane") return stored;
+	return defaultSubagentView(details, input);
+}
+
+function renderSubagentViewToggle(viewMode) {
+	return `<div class="subagent-view-toggle" role="group" aria-label="Subagent view">
+		<button type="button" class="subagent-view-btn${viewMode === "list" ? " is-active" : ""}" data-view="list">List</button>
+		<button type="button" class="subagent-view-btn${viewMode === "swimlane" ? " is-active" : ""}" data-view="swimlane">Swimlane</button>
+	</div>`;
+}
+
+function subagentProgressLabel(result, status, items) {
+	if (status === "running") {
+		if (items.length) return `${items.length} step${items.length === 1 ? "" : "s"}`;
+		return "Running…";
+	}
+	if (status === "failed") {
+		return result.errorMessage ? truncateText(result.errorMessage, 80) : "Failed";
+	}
+	const output = subagentFinalOutput(result);
+	if (output) return truncateText(output, 80);
+	if (items.length) return `${items.length} step${items.length === 1 ? "" : "s"}`;
+	return "Done";
+}
+
+function renderSubagentLane(result, toolRunning, expanded, options = {}) {
+	const status = subagentResultStatus(result, toolRunning);
+	const items = subagentDisplayItems(result.messages);
+	const icon = status === "running" ? "◌" : status === "failed" ? "✗" : "✓";
+	const source = result.agentSource ? ` (${result.agentSource})` : "";
+	const step = typeof result.step === "number" ? result.step + 1 : null;
+	const progress = subagentProgressLabel(result, status, items);
+	const stepBadge = options.showStep && step != null ? `<span class="subagent-lane-step">${step}</span>` : "";
+
+	return `<article class="subagent-lane subagent-lane--${status}">
+		<div class="subagent-lane-header">
+			<span class="subagent-lane-icon" aria-hidden="true">${icon}</span>
+			<span class="subagent-lane-name">${result.agent}${source}</span>
+			${stepBadge}
+		</div>
+		<div class="subagent-lane-task">${truncateText(result.task, expanded ? 400 : 120)}</div>
+		<div class="subagent-lane-progress">${progress}</div>
+	</article>`;
+}
+
+function renderSubagentSwimlane(results, mode, toolRunning, expanded) {
+	const laneClass = mode === "chain" ? "subagent-swimlane--chain" : "subagent-swimlane--parallel";
+	let html = `<div class="subagent-swimlane ${laneClass}">`;
+	for (let i = 0; i < results.length; i++) {
+		if (mode === "chain" && i > 0) {
+			html += `<div class="subagent-lane-connector" aria-hidden="true"><span>→</span></div>`;
+		}
+		html += renderSubagentLane(results[i], toolRunning, expanded, { showStep: mode === "chain" });
+	}
+	html += `</div>`;
+	return html;
+}
+
+function renderSubagentListResults(results, toolRunning, expanded) {
+	let html = `<div class="subagent-list">`;
+	for (const result of results) {
+		html += renderSubagentResult(result, toolRunning, expanded);
+	}
+	html += `</div>`;
+	return html;
+}
+
+function bindSubagentViewToggle(card) {
+	if (card.dataset.subagentViewBound) return;
+	card.dataset.subagentViewBound = "1";
+	card.addEventListener("click", (event) => {
+		const btn = event.target.closest(".subagent-view-btn");
+		if (!btn) return;
+		event.stopPropagation();
+		const view = btn.dataset.view;
+		if (view !== "list" && view !== "swimlane") return;
+		card.dataset.subagentView = view;
+		const state = app.chat.toolCards.get(card.dataset.toolId);
+		if (state) renderSubagentPanel(state);
+	});
+}
+
 function renderSubagentNestedItems(items, expanded) {
 	const limit = expanded ? items.length : 5;
 	const slice = items.slice(-limit);
@@ -154,46 +261,69 @@ export function renderSubagentPanel(state) {
 	const input = parseRawObject(state.rawInput);
 	const toolRunning = ["running", "in_progress", "pending"].includes(normalizeStatus(state.status));
 	const expanded = card.classList.contains("expanded");
+	const viewMode = getSubagentViewMode(card, details, input);
+	const layoutMode = subagentLayoutMode(details, input);
 	let html = `<div class="subagent-panel">`;
 
 	if (details) {
 		const scope = details.agentScope ? `<span class="subagent-chip">${details.agentScope}</span>` : "";
-		html += `<div class="subagent-summary">${scope}<span class="subagent-mode">${details.mode}</span></div>`;
-		html += `<div class="subagent-list">`;
-		for (const result of details.results) {
-			html += renderSubagentResult(result, toolRunning, expanded);
+		html += `<div class="subagent-summary">${scope}<span class="subagent-mode">${details.mode}</span>${renderSubagentViewToggle(viewMode)}</div>`;
+		if (viewMode === "swimlane") {
+			html += renderSubagentSwimlane(details.results, layoutMode ?? "parallel", toolRunning, expanded);
+			if (details.aggregator) {
+				html += `<div class="subagent-fanin-label">Fan-in</div>`;
+				html += `<div class="subagent-swimlane-fanin">${renderSubagentLane(details.aggregator, toolRunning, expanded)}</div>`;
+			}
+		} else {
+			html += renderSubagentListResults(details.results, toolRunning, expanded);
+			if (details.aggregator) {
+				html += `<div class="subagent-fanin-label">Fan-in</div>`;
+				html += renderSubagentResult(details.aggregator, toolRunning, expanded);
+			}
 		}
-		if (details.aggregator) {
-			html += `<div class="subagent-fanin-label">Fan-in</div>`;
-			html += renderSubagentResult(details.aggregator, toolRunning, expanded);
-		}
-		html += `</div>`;
 	} else if (input) {
-		html += `<div class="subagent-list">`;
+		const pendingResults = [];
 		if (Array.isArray(input.chain)) {
 			for (const step of input.chain) {
-				html += renderSubagentResult(
-					{ agent: step.agent, agentSource: "pending", task: step.task, exitCode: -1, messages: [] },
-					true,
-					expanded,
-				);
+				pendingResults.push({
+					agent: step.agent,
+					agentSource: "pending",
+					task: step.task,
+					exitCode: -1,
+					messages: [],
+				});
 			}
 		} else if (Array.isArray(input.tasks)) {
 			for (const task of input.tasks) {
-				html += renderSubagentResult(
-					{ agent: task.agent, agentSource: "pending", task: task.task, exitCode: -1, messages: [] },
-					true,
-					expanded,
-				);
+				pendingResults.push({
+					agent: task.agent,
+					agentSource: "pending",
+					task: task.task,
+					exitCode: -1,
+					messages: [],
+				});
 			}
 		} else if (input.agent && input.task) {
-			html += renderSubagentResult(
-				{ agent: input.agent, agentSource: "pending", task: input.task, exitCode: -1, messages: [] },
-				true,
-				expanded,
-			);
+			pendingResults.push({
+				agent: input.agent,
+				agentSource: "pending",
+				task: input.task,
+				exitCode: -1,
+				messages: [],
+			});
 		}
-		html += `</div>`;
+
+		if (pendingResults.length) {
+			const pendingMode = subagentLayoutMode(null, input);
+			html += `<div class="subagent-summary">${renderSubagentViewToggle(viewMode)}</div>`;
+			if (viewMode === "swimlane") {
+				html += renderSubagentSwimlane(pendingResults, pendingMode ?? "parallel", true, expanded);
+			} else {
+				html += renderSubagentListResults(pendingResults, true, expanded);
+			}
+		} else {
+			html += `<div class="subagent-list"></div>`;
+		}
 	} else {
 		const fallback = formatRaw(state.rawOutput) || formatRaw(state.rawInput);
 		html += fallback
@@ -212,6 +342,10 @@ export function renderSubagentPanel(state) {
 	} else {
 		panel.outerHTML = html;
 	}
+
+	bindSubagentViewToggle(card);
+	panel = card.querySelector(".subagent-panel");
+	if (panel) enhanceRenderedMarkdown(panel);
 }
 
 export function syncSubagentToolCard(state) {
@@ -220,6 +354,7 @@ export function syncSubagentToolCard(state) {
 	const toolRunning = ["running", "in_progress", "pending"].includes(normalizeStatus(state.status));
 
 	card.classList.add("tool-card--subagent");
+	bindSubagentViewToggle(card);
 	card.querySelector(".tool-name").textContent = subagentHeaderLabel(details, state.rawInput);
 
 	const statusBadge = card.querySelector(".tool-status");

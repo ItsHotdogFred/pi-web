@@ -40,7 +40,7 @@
 				</div>
 
 				<div class="sidebar-search hidden" id="sidebar-search">
-					<input type="search" id="search-input" placeholder="Search agents…" autocomplete="off" />
+					<input type="search" id="search-input" placeholder="Search agents & conversations…" autocomplete="off" />
 				</div>
 
 				<nav class="sidebar-nav" aria-label="Main navigation">
@@ -56,7 +56,6 @@
 				</nav>
 
 				<section class="sidebar-section">
-					<h2 class="sidebar-section-title">Today</h2>
 					<div class="today-list" id="today-list" aria-label="Recent agents"></div>
 				</section>
 			</aside>
@@ -175,11 +174,13 @@
 						</div>
 					</header>
 
-					<div class="chat-area" id="chat-area">
-						<div class="messages" id="messages" aria-live="polite"></div>
-					</div>
+					<div class="chat-body">
+						<div class="chat-main">
+							<div class="chat-area" id="chat-area">
+								<div class="messages" id="messages" aria-live="polite"></div>
+							</div>
 
-					<div class="chat-composer-wrap">
+							<div class="chat-composer-wrap">
 						<div class="file-context hidden" id="file-context">
 							<button type="button" class="file-context-header" id="file-context-toggle" aria-expanded="true">
 								<svg class="file-context-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -195,6 +196,15 @@
 						<div id="chat-inline-pickers"></div>
 
 						<div id="chat-composer-mount"></div>
+							</div>
+						</div>
+
+						<aside class="prompt-history" id="prompt-history" aria-label="Prompt history">
+							<div class="prompt-history-header">
+								<h2 class="prompt-history-title">History</h2>
+							</div>
+							<nav class="prompt-history-list" id="prompt-history-list"></nav>
+						</aside>
 					</div>
 				</div>
 			</main>
@@ -273,6 +283,7 @@
 		</template>
 
 		<script src="/marked.min.js"></script>
+		<script src="/mermaid.min.js"></script>
 		<script type="module" src="/app.js"></script>
 	</body>
 </html>

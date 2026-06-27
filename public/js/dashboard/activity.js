@@ -5,6 +5,7 @@ import {
 	activityFeedEl,
 } from "../dom/elements.js";
 import { animateEnter } from "../utils/animation.js";
+import { formatDateGroupLabel, sessionDateKey } from "../utils/format.js";
 import { filteredSessions } from "./sessionHelpers.js";
 import { createTodayItem, createActivityCard } from "./sessionRow.js";
 
@@ -68,8 +69,28 @@ function renderTodayList() {
 		return;
 	}
 
+	let currentDateKey = null;
+	let currentGroup = null;
+
 	for (const session of list) {
-		todayListEl.appendChild(createTodayItem(session));
+		const dateKey = sessionDateKey(session.updatedAt) || "unknown";
+		if (dateKey !== currentDateKey) {
+			currentDateKey = dateKey;
+			currentGroup = document.createElement("div");
+			currentGroup.className = "session-date-group";
+
+			const heading = document.createElement("h2");
+			heading.className = "sidebar-section-title session-date-group-title";
+			heading.textContent = formatDateGroupLabel(session.updatedAt);
+			currentGroup.append(heading);
+
+			const items = document.createElement("div");
+			items.className = "session-date-group-items";
+			currentGroup.append(items);
+			todayListEl.appendChild(currentGroup);
+		}
+
+		currentGroup.querySelector(".session-date-group-items").appendChild(createTodayItem(session));
 	}
 }
 

@@ -8,6 +8,37 @@ import {
 } from "./sessionHelpers.js";
 import { openSession } from "./sessions.js";
 
+export function formatLineStats(sessionId) {
+	const stats = app.session.lineStats[sessionId];
+	if (!stats) return null;
+	const added = stats.linesAdded ?? 0;
+	const removed = stats.linesRemoved ?? 0;
+	if (added === 0 && removed === 0) return null;
+	const parts = [];
+	if (added > 0) parts.push(`+${added}`);
+	if (removed > 0) parts.push(`−${removed}`);
+	return parts.join(" ");
+}
+
+function lineStatsHtml(sessionId) {
+	const stats = app.session.lineStats[sessionId];
+	if (!stats) return "";
+	const added = stats.linesAdded ?? 0;
+	const removed = stats.linesRemoved ?? 0;
+	if (added === 0 && removed === 0) return "";
+	let html = '<span class="session-line-stats">';
+	if (added > 0) html += `<span class="stat-add">+${added}</span>`;
+	if (removed > 0) html += `${added > 0 ? " " : ""}<span class="stat-del">−${removed}</span>`;
+	html += "</span>";
+	return html;
+}
+
+function searchSnippet(sessionId) {
+	const q = app.ui.searchQuery.trim();
+	if (q.length < 2) return null;
+	return app.ui.sessionSearchResults?.get(sessionId)?.snippet ?? null;
+}
+
 let sessionArtModule = null;
 async function loadSessionArt() {
 	if (!sessionArtModule) sessionArtModule = await import("../session-art.js");
@@ -95,9 +126,15 @@ function renderActivityCardLeft(session, status, isRunning) {
 
 	const project = document.createElement("span");
 	project.className = "activity-card-project";
-	project.textContent = sessionProjectName(session);
+	const snippet = searchSnippet(session.sessionId);
+	project.textContent = snippet || sessionProjectName(session);
 
 	meta.append(time, project);
+
+	const statsEl = document.createElement("span");
+	statsEl.className = "activity-card-line-stats";
+	statsEl.innerHTML = lineStatsHtml(session.sessionId);
+	if (statsEl.innerHTML) meta.append(statsEl);
 
 	const badge = document.createElement("span");
 	badge.className = `activity-badge ${status.variant}`;
@@ -117,11 +154,12 @@ export function createTodayItem(session) {
 	btn.dataset.sessionId = session.sessionId;
 
 	const icon = isRunning ? runningIconSvg() : sessionIconSvg(sessionAccentColor(session.sessionId));
-	const meta = isRunning
+	const metaText = isRunning
 		? "Working…"
 		: formatRelativeTime(session.updatedAt) || sessionProjectName(session);
+	const stats = lineStatsHtml(session.sessionId);
 
-	btn.innerHTML = `${icon}<span class="today-item-body"><span class="today-item-title">${escapeHtml(sessionTitle(session))}</span><span class="today-item-meta">${escapeHtml(meta)}</span></span>`;
+	btn.innerHTML = `${icon}<span class="today-item-body"><span class="today-item-title">${escapeHtml(sessionTitle(session))}</span><span class="today-item-meta">${escapeHtml(metaText)}${stats ? ` ${stats}` : ""}</span></span>`;
 
 	btn.addEventListener("click", () => openSession(session.sessionId));
 	return btn;
@@ -146,9 +184,16 @@ export function createActivityCard(session) {
 
 	const subtitle = document.createElement("span");
 	subtitle.className = "activity-card-subtitle";
-	subtitle.textContent = sessionProjectName(session);
+	const cardSnippet = searchSnippet(session.sessionId);
+	subtitle.textContent = cardSnippet || sessionProjectName(session);
+	if (cardSnippet) subtitle.classList.add("activity-card-search-snippet");
+
+	const cardStats = document.createElement("span");
+	cardStats.className = "activity-card-subtitle-stats";
+	cardStats.innerHTML = lineStatsHtml(session.sessionId);
 
 	right.append(title, subtitle);
+	if (cardStats.innerHTML) right.append(cardStats);
 	card.append(left, right);
 
 	card.addEventListener("click", () => openSession(session.sessionId));

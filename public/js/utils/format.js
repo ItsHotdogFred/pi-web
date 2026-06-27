@@ -21,12 +21,43 @@ export function formatRelativeTime(iso) {
 	const sec = Math.floor(diff / 1000);
 	if (sec < 60) return "just now";
 	const min = Math.floor(sec / 60);
-	if (min < 60) return `${min}m`;
+	if (min < 60) return `${min}m ago`;
 	const hr = Math.floor(min / 60);
-	if (hr < 24) return `${hr}h`;
+	if (hr < 24) return `${hr}h ago`;
 	const day = Math.floor(hr / 24);
-	if (day < 7) return `${day}d`;
+	if (day < 7) return `${day}d ago`;
 	return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+export function sessionDateKey(iso) {
+	if (!iso) return "";
+	const date = new Date(iso);
+	if (Number.isNaN(date.getTime())) return "";
+	const y = date.getFullYear();
+	const m = String(date.getMonth() + 1).padStart(2, "0");
+	const d = String(date.getDate()).padStart(2, "0");
+	return `${y}-${m}-${d}`;
+}
+
+export function formatDateGroupLabel(iso) {
+	if (!iso) return "Unknown";
+	const date = new Date(iso);
+	if (Number.isNaN(date.getTime())) return "Unknown";
+
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
+	const then = new Date(date);
+	then.setHours(0, 0, 0, 0);
+	const diffDays = Math.round((today - then) / (24 * 60 * 60 * 1000));
+
+	if (diffDays === 0) return "Today";
+	if (diffDays === 1) return "Yesterday";
+	if (diffDays < 7) {
+		return date.toLocaleDateString(undefined, { weekday: "long" });
+	}
+	const opts = { month: "short", day: "numeric" };
+	if (date.getFullYear() !== today.getFullYear()) opts.year = "numeric";
+	return date.toLocaleDateString(undefined, opts);
 }
 
 export function escapeHtml(text) {

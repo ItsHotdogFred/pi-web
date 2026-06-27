@@ -18,6 +18,7 @@ import {
 } from "../project/menu.js";
 import { syncGitContext } from "../project/git.js";
 import { renderSessions, upsertSession, switchSession } from "../dashboard/sessions.js";
+import { fetchSessionStats } from "../dashboard/sessionStats.js";
 import { loadContributions } from "../dashboard/contributions.js";
 import { setContextUsage, renderContextUsage } from "../context/dial.js";
 import {
@@ -60,6 +61,7 @@ function handleProjectPathError(msg) {
 function handleSessions(msg) {
 	app.session.sessions = Array.isArray(msg.sessions) ? msg.sessions : [];
 	renderSessions();
+	void fetchSessionStats();
 }
 
 function handleModels(msg) {

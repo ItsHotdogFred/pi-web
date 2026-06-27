@@ -20,6 +20,19 @@ export async function serveStatic(req, res, pathname) {
 		}
 	}
 
+	if (staticPath === "/mermaid.min.js") {
+		const mermaidPath = join(APP_ROOT, "node_modules", "mermaid", "dist", "mermaid.min.js");
+		try {
+			const body = await readFile(mermaidPath);
+			res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+			res.end(body);
+			return;
+		} catch {
+			res.writeHead(404).end("Not found");
+			return;
+		}
+	}
+
 	const filePath = join(PUBLIC_DIR, staticPath.replace(/^\/+/, ""));
 	if (!filePath.startsWith(PUBLIC_DIR)) {
 		res.writeHead(403).end("Forbidden");

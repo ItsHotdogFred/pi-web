@@ -62,6 +62,11 @@ describe("HTTP smoke", () => {
 		assert.equal(res.status, 200);
 	});
 
+	test("GET /mermaid.min.js returns 200", async () => {
+		const res = await fetch(`${baseUrl}/mermaid.min.js`);
+		assert.equal(res.status, 200);
+	});
+
 	test("GET /api/git returns 200 JSON with git keys", async () => {
 		const res = await fetch(`${baseUrl}/api/git`);
 		assert.equal(res.status, 200);

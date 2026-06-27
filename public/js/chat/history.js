@@ -2,6 +2,7 @@ import { app } from "../state/store.js";
 import {
 	addUserMessage,
 	finalizeAssistantTurn,
+	rebuildPromptHistory,
 	scrollToBottom,
 } from "./messages.js";
 import { ingestEvent } from "./ingestEvent.js";
@@ -65,5 +66,6 @@ export function applyHistoryBatch(events) {
 	flushUserMessage();
 	finalizeAssistantTurn();
 	app.session.batchHistoryMode = false;
+	rebuildPromptHistory();
 	scrollToBottom();
 }

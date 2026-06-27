@@ -50,20 +50,33 @@ Browser (public/)  ←WebSocket→  server.js → src/  ←stdio ACP→  pi-acp 
 |---|---|
 | **Dashboard** | Home composer, prompt activity heatmap, recent activity feed, generative session art (aurora / identicon / flow — click a card to cycle) |
 | **Sidebar** | Search and quick-open recent agents for the current project |
-| **Chat** | Streaming markdown, thinking blocks, tool cards with live status, agent plan blocks |
+| **Chat** | Streaming markdown, thinking blocks, tool cards with live status, agent plan blocks, subagent cards (parallel / chain / single) |
+| **Prompt history** | Sidebar list of your prompts; click to scroll, fork from any turn to start a new session |
 | **Sessions** | List, switch, and resume Pi sessions for the current project |
 | **Projects** | Switch folders from the header; recents stored in localStorage |
+| **Project notes** | Per-project scratchpad at `.pi-web/note.md` (Ctrl/Cmd+Shift+N) |
 | **Models** | Searchable picker synced with Pi's configured providers |
 | **Commands** | `/` palette for Pi slash commands and extensions |
 | **File references** | Type `@` or click the file button to insert `@path` or `@folder/` into your prompt |
 | **Context dial** | Token usage and breakdown (system, skills, project context, conversation), plus a one-click compact action |
 | **Attachments** | Drop or attach images in the composer |
 | **Code blocks** | Copy button on assistant fenced code blocks |
-| **File context** | Collapsible list of files touched in the current session, with open-in-editor links (VS Code, Cursor, Zed) |
-| **Permissions** | Approve or deny tool calls in a modal before Pi runs them |
+| **File context** | Collapsible list of files touched in the current session, open-in-editor links (VS Code, Cursor, Zed), and a diff review modal for all changes |
+| **Permissions** | Approve or deny tool calls in a modal; previews show shell commands and edit/write diffs before you allow |
+| **Tab status** | Browser title and favicon reflect working, done, permission needed, and error states |
 | **Notifications** | Optional browser alerts when Pi finishes a turn while the tab is in the background |
 
 Everything runs locally. The browser talks to your machine only. One pi-acp process per tab.
+
+### Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `/` | Open command palette (when the composer isn't focused) |
+| Ctrl/Cmd+Shift+N | Open project note |
+| Ctrl/Cmd+Shift+R | Reconnect WebSocket |
+| Ctrl+Shift+G | Cycle session card art style on the dashboard |
+| Esc | Close command palette |
 
 ---
 
@@ -111,6 +124,7 @@ CLI options:
 piweb --help          # usage, composer tips (@ files, / commands)
 piweb --version       # installed version
 piweb --port 3848     # different port
+piweb --host 0.0.0.0  # bind address (LAN access)
 piweb --cwd /path     # default project folder
 ```
 
@@ -178,7 +192,7 @@ PI_WEB_AUTO_APPROVE=1 npm start
 4. Streaming updates (text, tools, thoughts, usage) get normalized and pushed to the browser as JSON.
 5. Session history loads from Pi's on-disk JSONL when possible (fast path) or replays through ACP (fallback).
 
-**Lazy where it helps:** a new session is precached in the background so "New Agent" feels instant. Recent sessions preload from disk before you click them. Models and slash commands are fetched in a hidden probe session so the dashboard is ready before your first prompt.
+**Lazy where it helps:** a new session is precached in the background so "New Agent" feels instant. Recent sessions preload from disk before you click them. Models and slash commands are fetched in a hidden probe session so the dashboard is ready before your first prompt. Fork-from-prompt copies Pi's on-disk JSONL up to a chosen user turn — no ACP replay required.
 
 **Safe by default:** tool permissions open a modal in the browser. Approve once, always allow, or deny. Set `PI_WEB_AUTO_APPROVE=1` only for trusted local use. Don't expose pi-web to the internet and walk away.
 
@@ -189,10 +203,11 @@ PI_WEB_AUTO_APPROVE=1 npm start
 ## Development
 
 ```bash
-npm run dev
+npm run dev          # restart server on file changes (node --watch)
+npm run test:smoke   # run smoke tests (node:test + jsdom)
 ```
 
-Restarts the bridge on file changes (`node --watch`). Frontend edits are plain static ES modules — refresh the browser.
+Frontend edits are plain static ES modules — refresh the browser.
 
 ```
 server.js              entry point
@@ -201,18 +216,23 @@ src/                   Node server (HTTP, WebSocket, ACP bridge)
   ws/                  per-tab Pi session lifecycle
   acp/                 pi-acp process + ACP client
   http/                REST helpers
+  sessions/            session file index + fork-from-prompt
   analytics/           context + contribution stats
 public/                static UI
   app.js               bootstraps modules under public/js/
   js/                  dashboard, chat, composer, wire protocol, etc.
+  styles/              modular CSS (base, layout, chat, modals, …)
 patches/               pi-acp patches applied on npm install
+test/smoke/            smoke tests
 ```
 
 Local profiling scripts (optional, not part of the runtime):
 
 ```bash
-node bench-startup.mjs      # Pi RPC startup timings
-node bench-extensions.mjs   # per-extension load cost
+node bench-startup.mjs         # Pi RPC startup timings
+node bench-extensions.mjs      # per-extension load cost
+node bench-piweb.mjs           # end-to-end session switch benchmark
+node bench-switch-session.mjs  # session switch perf (server-side)
 ```
 
 ---
@@ -223,10 +243,13 @@ Read-only helpers for the dashboard UI. All accept an optional `cwd` query param
 
 | Endpoint | Returns |
 |----------|---------|
+| `GET /health` | `{ ok: true }` health check |
 | `GET /api/git?cwd=...` | Project path, repo name, current branch, branch list |
 | `GET /api/contributions?cwd=...&refresh=1` | Prompt activity heatmap data from local session history |
 | `GET /api/files?cwd=...` | Project-relative file and folder paths for `@` reference picker |
 | `GET /api/note?cwd=...` | Project note content (`.pi-web/note.md`) |
+| `PUT /api/note?cwd=...` | Save project note — body: `{ "content": "..." }` |
+| `POST /api/session/fork` | Fork a session from a prompt — body: `{ "cwd", "sourceSessionId", "promptIndex" }` → `{ sessionId, title, cwd }` |
 
 ---
 
@@ -297,7 +320,10 @@ Different job. Those are full IDE integrations. pi-web is Pi — your skills, yo
 Click **Compact now** in the dial popover, start a new session for the next task, or run `/compact` from the command palette. The dial tells you before the model starts forgetting, not after.
 
 **Why does pi-web ask before running tools?**
-So you can see what Pi is about to do before it touches your filesystem or shell. Set `PI_WEB_AUTO_APPROVE=1` if you want the old hands-off behavior on a trusted machine.
+So you can see what Pi is about to do before it touches your filesystem or shell — including the exact command or diff for shell and edit/write tools. Set `PI_WEB_AUTO_APPROVE=1` if you want the old hands-off behavior on a trusted machine.
+
+**How do I branch from an earlier prompt?**
+Open the prompt in chat, then click the fork icon next to that turn in the History sidebar. pi-web copies the session JSONL up to that prompt into a new agent.
 
 ---
 

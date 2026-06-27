@@ -7,10 +7,37 @@ export function sortedSessions() {
 	);
 }
 
+function sessionTitleLower(session) {
+	return (session.title || "New Agent").toLowerCase();
+}
+
+function titleMatches(session, q) {
+	return sessionTitleLower(session).includes(q);
+}
+
+function searchScore(session, q, results) {
+	if (results?.has(session.sessionId)) return results.get(session.sessionId).score ?? 0;
+	if (titleMatches(session, q)) return 100;
+	return 0;
+}
+
 export function filteredSessions() {
 	const q = app.ui.searchQuery.trim().toLowerCase();
 	if (!q) return sortedSessions();
-	return sortedSessions().filter((s) => (s.title || "New Agent").toLowerCase().includes(q));
+
+	if (q.length >= 2) {
+		const results = app.ui.sessionSearchResults;
+		const matches = sortedSessions().filter(
+			(s) => titleMatches(s, q) || (results && results.has(s.sessionId)),
+		);
+		return matches.sort((a, b) => {
+			const scoreDiff = searchScore(b, q, results) - searchScore(a, q, results);
+			if (scoreDiff !== 0) return scoreDiff;
+			return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+		});
+	}
+
+	return sortedSessions().filter((s) => titleMatches(s, q));
 }
 
 export function sessionTitle(session) {

@@ -1,4 +1,7 @@
 import { escapeHtml } from "./format.js";
+import { enhanceMermaidBlocks } from "./mermaid.js";
+
+export { enhanceMermaidBlocks };
 
 const BLOCKED_TAGS = new Set(["script", "iframe", "object", "embed", "form", "meta", "link", "base", "style"]);
 const URL_ATTRS = new Set(["href", "src", "xlink:href", "formaction", "action"]);
@@ -75,11 +78,19 @@ async function copyCodeText(btn, codeEl) {
 	showCopiedFeedback(btn);
 }
 
+function isMermaidCodeBlock(pre) {
+	const code = pre.querySelector("code");
+	if (!code) return false;
+	const cls = code.className ?? "";
+	return /\blanguage-mermaid\b/.test(cls) || /\bmermaid\b/.test(cls);
+}
+
 export function enhanceAssistantCodeBlocks(container) {
 	if (!container) return;
 
 	for (const pre of container.querySelectorAll("pre")) {
-		if (pre.closest(".code-block")) continue;
+		if (pre.closest(".code-block, .mermaid-diagram")) continue;
+		if (isMermaidCodeBlock(pre)) continue;
 		const code = pre.querySelector("code");
 		if (!code) continue;
 
@@ -100,4 +111,9 @@ export function enhanceAssistantCodeBlocks(container) {
 		pre.replaceWith(wrapper);
 		wrapper.append(header, pre);
 	}
+}
+
+export function enhanceRenderedMarkdown(container, { renderMermaid = true } = {}) {
+	enhanceAssistantCodeBlocks(container);
+	if (renderMermaid) enhanceMermaidBlocks(container);
 }

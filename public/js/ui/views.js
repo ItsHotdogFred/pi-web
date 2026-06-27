@@ -10,6 +10,7 @@ import { prefersReducedMotion } from "../utils/animation.js";
 import { renderContextUsage } from "../context/dial.js";
 import { renderActivityFeed } from "../dashboard/activity.js";
 import { loadContributions } from "../dashboard/contributions.js";
+import { refreshTabBaseTitle } from "./tabStatus.js";
 
 export function startSessionSwitchAnimation() {
 	if (app.session.sessionSwitchAnimating) {
@@ -84,6 +85,7 @@ export function showView(view, { animate = true } = {}) {
 	}
 
 	app.ui.currentView = view;
+	refreshTabBaseTitle();
 	if (view === "dashboard") app.ui.animateActivityFeed = animate && activityFeedEl.childElementCount === 0;
 
 	document.querySelectorAll(".nav-item").forEach((el) => {

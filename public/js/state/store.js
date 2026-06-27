@@ -27,6 +27,7 @@ export const app = {
 		sessionSwitchRequestId: 0,
 		activeSessionSwitchRequestId: null,
 		sessionSwitchAnimationToken: 0,
+		lineStats: {},
 	},
 	chat: {
 		assistantBlock: null,
@@ -45,6 +46,8 @@ export const app = {
 		viewTransitioning: false,
 		busy: false,
 		searchQuery: "",
+		sessionSearchResults: null,
+		sessionSearchLoading: false,
 		animateActivityFeed: false,
 		attachTarget: null,
 		contextUsage: { used: null, size: null, percent: null, breakdown: [] },

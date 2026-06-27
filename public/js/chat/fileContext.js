@@ -10,6 +10,7 @@ import {
 import { resolveToolName } from "../utils/tools.js";
 import { animateEnter } from "../utils/animation.js";
 import { extractDiffFromTool, scrollToToolDiff } from "./toolDiff.js";
+import { openDiffReview } from "./diffReview.js";
 
 export function clearChangedFiles() {
 	app.chat.changedFiles.clear();
@@ -67,6 +68,33 @@ function buildEditorUrl(editorId, filePath, line = 1) {
 function openInEditor(filePath, line = 1) {
 	const url = buildEditorUrl(getPreferredEditor(), filePath, line);
 	window.location.href = url;
+}
+
+function renderFileContextReviewButton() {
+	let btn = fileContextEl?.querySelector(".file-context-review-btn");
+	const hasDiffs = app.chat.fileDiffs.size > 0;
+
+	if (!hasDiffs) {
+		btn?.remove();
+		return;
+	}
+
+	const header = fileContextEl?.querySelector(".file-context-header");
+	if (!header) return;
+
+	if (!btn) {
+		btn = document.createElement("button");
+		btn.type = "button";
+		btn.className = "file-context-review-btn";
+		btn.textContent = "Review changes";
+		btn.addEventListener("click", (event) => {
+			event.stopPropagation();
+			openDiffReview();
+		});
+		const picker = header.querySelector(".file-context-editor-picker");
+		if (picker) header.insertBefore(btn, picker);
+		else header.appendChild(btn);
+	}
 }
 
 function renderFileContextEditorPicker() {
@@ -133,6 +161,7 @@ export function renderFileContext() {
 	fileContextEl.classList.toggle("collapsed", app.chat.fileContextCollapsed);
 	$("file-context-toggle")?.setAttribute("aria-expanded", String(!app.chat.fileContextCollapsed));
 	countEl.textContent = `${files.length} File${files.length === 1 ? "" : "s"} Touched`;
+	renderFileContextReviewButton();
 	renderFileContextEditorPicker();
 
 	listEl.replaceChildren();

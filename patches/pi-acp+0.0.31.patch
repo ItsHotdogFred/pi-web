@@ -1,8 +1,57 @@
 diff --git a/node_modules/pi-acp/dist/index.js b/node_modules/pi-acp/dist/index.js
-index d67c4b8..cb95b8b 100644
+index d67c4b8..dee4d5c 100644
 --- a/node_modules/pi-acp/dist/index.js
 +++ b/node_modules/pi-acp/dist/index.js
-@@ -832,6 +832,37 @@ var PiAcpSession = class {
+@@ -663,6 +663,32 @@ var SessionManager = class {
+       this.close(id);
+     }
+   }
++  /** Remove a session entry without disposing its Pi subprocess. */
++  detach(sessionId) {
++    this.sessions.delete(sessionId);
++  }
++  /** Drop other session entries but keep the live subprocess attached to `keep`. */
++  detachOthers(keep) {
++    for (const [id, session] of this.sessions) {
++      if (session !== keep) this.sessions.delete(id);
++    }
++  }
++  findLiveForCwd(cwd) {
++    const target = resolvePath(cwd);
++    for (const session of this.sessions.values()) {
++      if (resolvePath(session.cwd) !== target) continue;
++      const child = session.proc?.child;
++      if (child && !child.killed) return session;
++    }
++    return null;
++  }
++  rekeySession(session, newSessionId) {
++    if (session.sessionId === newSessionId) return session;
++    this.sessions.delete(session.sessionId);
++    session.sessionId = newSessionId;
++    this.sessions.set(newSessionId, session);
++    return session;
++  }
+   async create(params) {
+     let proc;
+     try {
+@@ -820,6 +846,15 @@ var PiAcpSession = class {
+   wasCancelRequested() {
+     return this.cancelRequested;
+   }
++  resetForSessionSwitch() {
++    this.cancelRequested = false;
++    this.pendingTurn = null;
++    this.turnQueue = [];
++    this.currentToolCalls.clear();
++    this.inAgentLoop = false;
++    this.fileSnapshots.clear();
++    this.fileMutationToolCallIds.clear();
++  }
+   emit(update) {
+     this.lastEmit = this.lastEmit.then(
+       () => this.conn.sessionUpdate({
+@@ -832,6 +867,37 @@ var PiAcpSession = class {
    async flushEmits() {
      await this.lastEmit;
    }
@@ -40,7 +89,7 @@ index d67c4b8..cb95b8b 100644
    startTurn(t) {
      this.cancelRequested = false;
      this.inAgentLoop = false;
-@@ -840,7 +871,9 @@ var PiAcpSession = class {
+@@ -840,7 +906,9 @@ var PiAcpSession = class {
        sessionUpdate: "session_info_update",
        _meta: { piAcp: { queueDepth: this.turnQueue.length, running: true } }
      });
@@ -51,7 +100,7 @@ index d67c4b8..cb95b8b 100644
        void this.flushEmits().finally(() => {
          const authErr = maybeAuthRequiredError(err);
          if (authErr) {
-@@ -1085,23 +1118,7 @@ var PiAcpSession = class {
+@@ -1085,23 +1153,7 @@ var PiAcpSession = class {
        }
        case "agent_end": {
          void this.flushEmits().finally(() => {
@@ -76,7 +125,7 @@ index d67c4b8..cb95b8b 100644
          });
          break;
        }
-@@ -1623,9 +1640,15 @@ function describeFallback(c) {
+@@ -1623,9 +1675,15 @@ function describeFallback(c) {
    if (location) parts.push(location);
    return parts.length ? `(${parts.join(":")})` : "(command)";
  }
@@ -93,7 +142,7 @@ index d67c4b8..cb95b8b 100644
    const root = data;
    const commandsRaw = Array.isArray(root?.commands) ? root.commands : Array.isArray(root?.data?.commands) ? root.data.commands : [];
    const out = [];
-@@ -1907,8 +1930,7 @@ var PiAcpAgent = class {
+@@ -1907,8 +1965,7 @@ var PiAcpAgent = class {
          try {
            const pi = await session.proc.getCommands();
            const { commands } = toAvailableCommandsFromPiGetCommands(pi, {
@@ -103,7 +152,155 @@ index d67c4b8..cb95b8b 100644
            });
            await this.conn.sessionUpdate({
              sessionId: session.sessionId,
-@@ -2425,8 +2447,7 @@ ${JSON.stringify(stats, null, 2)}`;
+@@ -2333,81 +2390,96 @@ ${JSON.stringify(stats, null, 2)}`;
+     if (!isAbsolute3(params.cwd)) {
+       throw RequestError3.invalidParams(`cwd must be an absolute path: ${params.cwd}`);
+     }
+-    this.sessions.close(params.sessionId);
+     this.lastSessionCwd = params.cwd;
+     const stored = this.findStoredSession(params.sessionId);
+     if (!stored) {
+       throw RequestError3.invalidParams(`Unknown sessionId: ${params.sessionId}`);
+     }
+     const enableSkillCommands = getEnableSkillCommands(params.cwd);
+-    const session = await this.restoreSession(params.sessionId, {
+-      cwd: params.cwd,
+-      mcpServers: params.mcpServers
+-    });
+-    const proc = session.proc;
+     const fileCommands = loadSlashCommands(params.cwd);
+-    this.sessions.closeAllExcept?.(session.sessionId);
++    const skipReplay = params._meta?.skipHistoryReplay === true || process.env.PI_ACP_SKIP_LOAD_REPLAY === "1";
++    const live = this.sessions.findLiveForCwd(params.cwd);
++    let session;
++    let proc;
++    if (live?.proc?.child && !live.proc.child.killed) {
++      await live.proc.switchSession(stored.sessionFile);
++      this.sessions.detachOthers(live);
++      this.sessions.rekeySession(live, params.sessionId);
++      live.resetForSessionSwitch();
++      session = live;
++      proc = live.proc;
++    } else {
++      this.sessions.close(params.sessionId);
++      session = await this.restoreSession(params.sessionId, {
++        cwd: params.cwd,
++        mcpServers: params.mcpServers
++      });
++      proc = session.proc;
++      this.sessions.closeAllExcept?.(session.sessionId);
++    }
+     this.store.upsert({
+       sessionId: params.sessionId,
+       cwd: params.cwd,
+       sessionFile: stored.sessionFile
+     });
+-    const data = await proc.getMessages();
+-    const messages = Array.isArray(data?.messages) ? data.messages : [];
+-    for (const m of messages) {
+-      const role = String(m?.role ?? "");
+-      if (role === "user") {
+-        const text = normalizePiMessageText(m?.content);
+-        if (text) {
++    if (!skipReplay) {
++      const data = await proc.getMessages();
++      const messages = Array.isArray(data?.messages) ? data.messages : [];
++      for (const m of messages) {
++        const role = String(m?.role ?? "");
++        if (role === "user") {
++          const text = normalizePiMessageText(m?.content);
++          if (text) {
++            await this.conn.sessionUpdate({
++              sessionId: session.sessionId,
++              update: {
++                sessionUpdate: "user_message_chunk",
++                content: { type: "text", text }
++              }
++            });
++          }
++        }
++        if (role === "assistant") {
++          const text = normalizePiAssistantText(m?.content);
++          if (text) {
++            await this.conn.sessionUpdate({
++              sessionId: session.sessionId,
++              update: {
++                sessionUpdate: "agent_message_chunk",
++                content: { type: "text", text }
++              }
++            });
++          }
++        }
++        if (role === "toolResult") {
++          const toolName = String(m?.toolName ?? "tool");
++          const toolCallId = String(m?.toolCallId ?? crypto.randomUUID());
++          const isError = Boolean(m?.isError);
+           await this.conn.sessionUpdate({
+             sessionId: session.sessionId,
+             update: {
+-              sessionUpdate: "user_message_chunk",
+-              content: { type: "text", text }
++              sessionUpdate: "tool_call",
++              toolCallId,
++              title: toolName,
++              kind: toolName === "read" ? "read" : toolName === "write" || toolName === "edit" ? "edit" : "other",
++              status: "completed",
++              rawInput: null,
++              rawOutput: m
+             }
+           });
+-        }
+-      }
+-      if (role === "assistant") {
+-        const text = normalizePiAssistantText(m?.content);
+-        if (text) {
++          const text = toolResultToText(m);
+           await this.conn.sessionUpdate({
+             sessionId: session.sessionId,
+             update: {
+-              sessionUpdate: "agent_message_chunk",
+-              content: { type: "text", text }
++              sessionUpdate: "tool_call_update",
++              toolCallId,
++              status: isError ? "failed" : "completed",
++              content: text ? [{ type: "content", content: { type: "text", text } }] : null,
++              rawOutput: m
+             }
+           });
+         }
+       }
+-      if (role === "toolResult") {
+-        const toolName = String(m?.toolName ?? "tool");
+-        const toolCallId = String(m?.toolCallId ?? crypto.randomUUID());
+-        const isError = Boolean(m?.isError);
+-        await this.conn.sessionUpdate({
+-          sessionId: session.sessionId,
+-          update: {
+-            sessionUpdate: "tool_call",
+-            toolCallId,
+-            title: toolName,
+-            kind: toolName === "read" ? "read" : toolName === "write" || toolName === "edit" ? "edit" : "other",
+-            status: "completed",
+-            rawInput: null,
+-            rawOutput: m
+-          }
+-        });
+-        const text = toolResultToText(m);
+-        await this.conn.sessionUpdate({
+-          sessionId: session.sessionId,
+-          update: {
+-            sessionUpdate: "tool_call_update",
+-            toolCallId,
+-            status: isError ? "failed" : "completed",
+-            content: text ? [{ type: "content", content: { type: "text", text } }] : null,
+-            rawOutput: m
+-          }
+-        });
+-      }
+     }
+     const { configOptions, models, modes } = await getSessionConfiguration(proc);
+     const response = {
+@@ -2425,8 +2497,7 @@ ${JSON.stringify(stats, null, 2)}`;
          try {
            const pi = await proc.getCommands();
            const { commands } = toAvailableCommandsFromPiGetCommands(pi, {

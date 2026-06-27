@@ -1,6 +1,7 @@
 import * as acp from "@agentclientprotocol/sdk";
 
 import { invalidateSessionFileIndex, getSessionFileIndex } from "../../sessions/sessionFiles.js";
+import { enrichSessionsWithTimestamps } from "../../sessions/sessionTimestamps.js";
 import {
 	sendHistoryBatch,
 	sendModelsFromConfigOptions,
@@ -66,6 +67,7 @@ export async function loadSession(session, sessionId, { replay = true, requestId
 				sessionId,
 				cwd: session.cwd,
 				mcpServers: [],
+				...(cached?.wireEvents?.length ? { _meta: { skipHistoryReplay: true } } : {}),
 			});
 		} finally {
 			session.replayHandler = null;
@@ -158,6 +160,7 @@ export async function refreshSessions(session) {
 			];
 		}
 		session.sessionFileIndex = await getSessionFileIndex(session.cwd);
+		sessions = await enrichSessionsWithTimestamps(sessions, session.sessionFileIndex);
 		sendJson(session.ws, { type: "sessions", sessions });
 		warmSessionCaches(session, sessions);
 		scheduleContextRefresh(session, 100);

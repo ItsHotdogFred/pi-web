@@ -3,8 +3,24 @@
 	overflow-y: auto;
 	display: flex;
 	flex-direction: column;
-	gap: 1px;
+	gap: 0.75rem;
 	min-height: 0;
+}
+
+.session-date-group {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.session-date-group-title {
+	margin: 0 0.65rem 0.25rem;
+}
+
+.session-date-group-items {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
 }
 
 .today-item {
