@@ -17,6 +17,7 @@ import { renderSessions } from "../dashboard/sessions.js";
 import { searchSessionsDebounced, clearSessionSearch } from "../dashboard/sessionSearch.js";
 import { cycleActivityArtStyle } from "../dashboard/activity.js";
 import { cycleTheme } from "../ui/theme.js";
+import { toggleFavouritesOnly } from "../ui/models.js";
 import { reconnect } from "../wire/websocket.js";
 import { addImageAttachment } from "../composer/attachments.js";
 import { bindAllComposers } from "../composer/bind.js";
@@ -28,6 +29,19 @@ const composerInputs = () =>
 	Object.values(COMPOSER_SCOPES)
 		.map((scope) => $(scope.inputId))
 		.filter(Boolean);
+function showFavToast(on) {
+	let toast = document.getElementById("fav-toast");
+	if (!toast) {
+		toast = document.createElement("div");
+		toast.id = "fav-toast";
+		toast.className = "art-style-toast";
+		document.body.appendChild(toast);
+	}
+	toast.textContent = on ? "★ Favourites only" : "★ Showing all models";
+	toast.classList.add("visible");
+	clearTimeout(app.ui.favToastTimer);
+	app.ui.favToastTimer = setTimeout(() => toast.classList.remove("visible"), 2000);
+}
 
 export function bindEvents() {
 	bindAllComposers();
@@ -80,6 +94,12 @@ export function bindEvents() {
 		if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "n") {
 			e.preventDefault();
 			toggleProjectNote();
+			return;
+		}
+if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+			e.preventDefault();
+			const on = toggleFavouritesOnly();
+			showFavToast(on);
 			return;
 		}
 		if (e.key === "/" && !composerInputs().includes(document.activeElement)) {

@@ -63,6 +63,7 @@ export const app = {
 		artStyleToastTimer: null,
 		themeMode: "system",
 		themeToastTimer: null,
+favToastTimer: null,
 		contributionsLoading: false,
 		contributionsRequestId: 0,
 	},
@@ -73,6 +74,8 @@ export const app = {
 		searchQuery: "",
 		searchTimer: null,
 		activeScope: "dashboard",
+		favourites: new Set(),
+		favouritesOnly: false,
 	},
 	composer: {
 		dashboardAttachments: [],

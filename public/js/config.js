@@ -7,6 +7,8 @@ export const ACTIVITY_ART_KEY = "pi-web-activity-art-style";
 export const THEME_PREF_KEY = "pi-web-theme";
 export const EDITOR_PREF_KEY = "pi-web-preferred-editor";
 export const NOTIFICATIONS_PREF_KEY = "pi-web-notifications";
+export const MODEL_FAVOURITES_KEY = "pi-web-model-favourites";
+export const MODEL_FAVS_ONLY_KEY = "pi-web-model-favs-only";
 
 export const EDITOR_OPTIONS = [
 	{ id: "vscode", label: "VS Code" },
