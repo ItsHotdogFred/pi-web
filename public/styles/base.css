@@ -8,6 +8,8 @@
 	--panel-active: #1e1e1e;
 	--border: #222;
 	--border-subtle: #1a1a1a;
+	--border-strong: #333;
+	--border-interactive: #444;
 	--text: #fff;
 	--muted: #888;
 	--muted-dim: #666;
@@ -22,6 +24,32 @@
 	--contrib-2: #006d32;
 	--contrib-3: #26a641;
 	--contrib-4: #3ecf8e;
+	--surface-1: #111;
+	--surface-2: #161616;
+	--surface-3: #1a1a1a;
+	--surface-inset: #0d0d0d;
+	--surface-deep: #0a0a0a;
+	--surface-sunken: #0f0f0f;
+	--surface-terminal: #000;
+	--surface-elevated: #101010;
+	--overlay-1: rgba(255, 255, 255, 0.02);
+	--overlay-2: rgba(255, 255, 255, 0.03);
+	--overlay-3: rgba(255, 255, 255, 0.04);
+	--overlay-4: rgba(255, 255, 255, 0.05);
+	--overlay-5: rgba(255, 255, 255, 0.06);
+	--overlay-6: rgba(255, 255, 255, 0.07);
+	--overlay-7: rgba(255, 255, 255, 0.08);
+	--overlay-8: rgba(255, 255, 255, 0.1);
+	--overlay-border: rgba(255, 255, 255, 0.18);
+	--link-underline: rgba(255, 255, 255, 0.2);
+	--outline-focus: rgba(255, 255, 255, 0.35);
+	--dial-track: rgba(255, 255, 255, 0.1);
+	--backdrop: rgba(0, 0, 0, 0.65);
+	--shadow-modal: rgba(0, 0, 0, 0.5);
+	--toast-bg: rgba(20, 20, 20, 0.92);
+	--skeleton-from: rgba(255, 255, 255, 0.04);
+	--skeleton-mid: rgba(255, 255, 255, 0.08);
+	--text-inverse: #000;
 	font-family:
 		"Inter",
 		ui-sans-serif,
@@ -30,6 +58,59 @@
 		BlinkMacSystemFont,
 		"Segoe UI",
 		sans-serif;
+}
+
+[data-theme="light"] {
+	color-scheme: light;
+	--bg: #f8f8f8;
+	--sidebar-bg: #f3f3f3;
+	--panel: #ffffff;
+	--panel-hover: #f0f0f0;
+	--panel-active: #ebebeb;
+	--border: #e5e5e5;
+	--border-subtle: #ededed;
+	--border-strong: #d4d4d4;
+	--border-interactive: #c4c4c4;
+	--text: #171717;
+	--muted: #737373;
+	--muted-dim: #a3a3a3;
+	--green: #16a34a;
+	--red: #dc2626;
+	--purple: #7c3aed;
+	--orange: #ea580c;
+	--blue-glow: rgba(99, 102, 241, 0.15);
+	--accent: #4f46e5;
+	--contrib-0: #ebebeb;
+	--contrib-1: #9be9a8;
+	--contrib-2: #40c463;
+	--contrib-3: #30a14e;
+	--contrib-4: #216e39;
+	--surface-1: #ffffff;
+	--surface-2: #f5f5f5;
+	--surface-3: #efefef;
+	--surface-inset: #f0f0f0;
+	--surface-deep: #e8e8e8;
+	--surface-sunken: #f3f3f3;
+	--surface-terminal: #fafafa;
+	--surface-elevated: #ffffff;
+	--overlay-1: rgba(0, 0, 0, 0.02);
+	--overlay-2: rgba(0, 0, 0, 0.03);
+	--overlay-3: rgba(0, 0, 0, 0.04);
+	--overlay-4: rgba(0, 0, 0, 0.05);
+	--overlay-5: rgba(0, 0, 0, 0.06);
+	--overlay-6: rgba(0, 0, 0, 0.07);
+	--overlay-7: rgba(0, 0, 0, 0.08);
+	--overlay-8: rgba(0, 0, 0, 0.1);
+	--overlay-border: rgba(0, 0, 0, 0.14);
+	--link-underline: rgba(0, 0, 0, 0.2);
+	--outline-focus: rgba(0, 0, 0, 0.25);
+	--dial-track: rgba(0, 0, 0, 0.1);
+	--backdrop: rgba(0, 0, 0, 0.35);
+	--shadow-modal: rgba(0, 0, 0, 0.15);
+	--toast-bg: rgba(255, 255, 255, 0.95);
+	--skeleton-from: rgba(0, 0, 0, 0.04);
+	--skeleton-mid: rgba(0, 0, 0, 0.08);
+	--text-inverse: #fff;
 }
 
 * {

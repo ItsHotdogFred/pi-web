@@ -1,6 +1,7 @@
 import { app } from "../state/store.js";
 import { escapeHtml } from "../utils/format.js";
 import { animateEnter } from "../utils/animation.js";
+import { todoStatusIcon } from "./todoState.js";
 import {
 	appendChatNode,
 	finalizeThoughtBlock,
@@ -23,14 +24,7 @@ function normalizePlanEntry(entry) {
 }
 
 function planStatusIcon(status) {
-	switch (status) {
-		case "completed":
-			return "✓";
-		case "in_progress":
-			return "◌";
-		default:
-			return "○";
-	}
+	return todoStatusIcon(status === "in_progress" ? "in_progress" : status === "completed" ? "completed" : "pending");
 }
 
 export function renderPlanPanel(entries) {

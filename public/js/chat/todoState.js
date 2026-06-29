@@ -1,4 +1,5 @@
 import { parseRawObject } from "../utils/format.js";
+import { icon } from "../icons/hover-icons.js";
 
 /** @typedef {{ id: number, subject: string, description?: string, activeForm?: string, status: string, blockedBy?: number[], owner?: string }} TodoTask */
 
@@ -95,10 +96,10 @@ export function selectOverlayLayout(tasks, budget) {
 export function todoStatusIcon(status) {
 	switch (status) {
 		case "completed":
-			return "✓";
+			return icon("simple-checked", { size: 12 });
 		case "in_progress":
-			return "◌";
+			return icon("refresh", { size: 12, spin: true });
 		default:
-			return "○";
+			return icon("clock", { size: 12 });
 	}
 }

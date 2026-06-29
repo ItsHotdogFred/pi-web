@@ -4,6 +4,25 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Pi</title>
+		<script>
+			(function () {
+				var KEY = "pi-web-theme";
+				var modes = ["system", "dark", "light"];
+				var mode = "system";
+				try {
+					var stored = localStorage.getItem(KEY);
+					if (stored && modes.indexOf(stored) >= 0) mode = stored;
+				} catch (_) {}
+				var resolved =
+					mode === "system"
+						? window.matchMedia("(prefers-color-scheme: dark)").matches
+							? "dark"
+							: "light"
+						: mode;
+				document.documentElement.dataset.themeMode = mode;
+				document.documentElement.dataset.theme = resolved;
+			})();
+		</script>
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 		<link rel="stylesheet" href="/style.css" />
 		<link rel="stylesheet" href="/skeleton-dashboard.css" />
@@ -32,10 +51,7 @@
 			<aside class="sidebar" id="sidebar">
 				<div class="sidebar-top">
 					<button type="button" class="icon-btn" id="search-btn" aria-label="Search">
-						<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-							<circle cx="7" cy="7" r="4.25" stroke="currentColor" stroke-width="1.25" />
-							<path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
-						</svg>
+						<span data-hi="magnifier" data-hi-size="16"></span>
 					</button>
 				</div>
 
@@ -45,12 +61,7 @@
 
 				<nav class="sidebar-nav" aria-label="Main navigation">
 					<button type="button" class="nav-item active" data-view="dashboard" id="nav-dashboard">
-						<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-							<rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.25" />
-							<rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.25" />
-							<rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.25" />
-							<rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.25" />
-						</svg>
+						<span data-hi="layout-dashboard" data-hi-size="16"></span>
 						Dashboard
 					</button>
 				</nav>
@@ -68,9 +79,7 @@
 							<div class="dropdown" id="project-dropdown">
 								<button type="button" class="context-chip context-chip-button dropdown-trigger" id="project-trigger" aria-haspopup="listbox" title="Switch project">
 									<span id="project-name">pi-web</span>
-									<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-										<path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-									</svg>
+									<span data-hi="down-chevron" data-hi-size="10"></span>
 								</button>
 								<div class="dropdown-menu project-menu hidden" id="project-menu" role="listbox">
 									<div class="project-menu-section">
@@ -94,11 +103,7 @@
 								</div>
 							</div>
 							<span class="context-chip context-chip-branch">
-								<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-									<circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.1" />
-									<circle cx="10" cy="10" r="2" stroke="currentColor" stroke-width="1.1" />
-									<path d="M4 6v2.5a1.5 1.5 0 001.5 1.5H8" stroke="currentColor" stroke-width="1.1" />
-								</svg>
+								<span data-hi="code" data-hi-size="14"></span>
 								<span id="branch-name">master</span>
 							</span>
 						</div>
@@ -122,6 +127,7 @@
 						</div>
 
 						<button type="button" class="commands-hint" id="commands-hint">
+							<span data-hi="pen" data-hi-size="13"></span>
 							Try Commands <kbd>/</kbd>
 						</button>
 					</div>
@@ -149,6 +155,7 @@
 							</div>
 							<div class="contrib-graph-footer">
 								<button type="button" class="contrib-graph-learn" id="contrib-graph-learn">
+									<span data-hi="info-circle" data-hi-size="12"></span>
 									Learn how we count prompts
 								</button>
 								<div class="contrib-graph-legend" aria-hidden="true">
@@ -174,9 +181,7 @@
 				<div class="view view-chat hidden" id="chat-view">
 					<header class="chat-header">
 						<button type="button" class="back-btn" id="back-to-dashboard" aria-label="Back to dashboard">
-							<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-								<path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-							</svg>
+							<span data-hi="arrow-back" data-hi-size="16"></span>
 						</button>
 						<h1 class="chat-title" id="chat-title">New Agent</h1>
 						<div class="connection-status status-connecting" id="chat-status">
@@ -194,7 +199,7 @@
 							<div class="chat-composer-wrap">
 						<div class="todo-panel hidden" id="todo-panel" aria-label="Agent todos">
 							<div class="todo-panel-header">
-								<span class="todo-panel-icon" id="todo-panel-icon" aria-hidden="true">○</span>
+								<span class="todo-panel-icon" id="todo-panel-icon" aria-hidden="true"></span>
 								<span class="todo-panel-title" id="todo-panel-title">Todos</span>
 								<span class="todo-panel-count" id="todo-panel-count"></span>
 							</div>
@@ -204,9 +209,7 @@
 
 						<div class="file-context hidden" id="file-context">
 							<button type="button" class="file-context-header" id="file-context-toggle" aria-expanded="true">
-								<svg class="file-context-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-									<path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
-								</svg>
+								<span class="file-context-chevron" data-hi="down-chevron" data-hi-size="12"></span>
 								<span id="file-context-count">0 Files Touched</span>
 							</button>
 							<div class="file-context-body" id="file-context-body">
@@ -222,7 +225,7 @@
 
 						<aside class="prompt-history" id="prompt-history" aria-label="Prompt history">
 							<div class="prompt-history-header">
-								<h2 class="prompt-history-title">History</h2>
+								<h2 class="prompt-history-title"><span data-hi="history-circle" data-hi-size="14"></span> History</h2>
 							</div>
 							<nav class="prompt-history-list" id="prompt-history-list"></nav>
 						</aside>
@@ -269,9 +272,7 @@
 			<div class="dropdown composer-dropdown">
 				<button type="button" class="pill-btn dropdown-trigger">
 					<span>Model</span>
-					<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-						<path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-					</svg>
+					<span data-hi="down-chevron" data-hi-size="10"></span>
 				</button>
 				<div class="dropdown-menu model-menu hidden">
 					<div class="model-menu-search-wrap">

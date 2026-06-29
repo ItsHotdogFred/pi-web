@@ -179,7 +179,7 @@
 }
 
 .contrib-cell:not(.is-future):hover {
-	outline: 1px solid rgba(255, 255, 255, 0.35);
+	outline: 1px solid var(--outline-focus);
 	outline-offset: 1px;
 }
 
@@ -243,7 +243,7 @@
 .commands-hint:hover {
 	background: var(--panel-hover);
 	color: var(--text);
-	border-color: #333;
+	border-color: var(--border-strong);
 }
 
 .commands-hint kbd {
@@ -287,7 +287,7 @@
 }
 
 .activity-card:hover {
-	background: rgba(255, 255, 255, 0.02);
+	background: var(--overlay-1);
 	border-color: var(--border);
 	transform: translateY(-1px);
 }
@@ -308,7 +308,7 @@
 	overflow: hidden;
 	padding: 0.6rem 0.7rem;
 	border-radius: 8px;
-	background: #0f0f0f;
+	background: var(--surface-sunken);
 	border: 1px solid var(--border-subtle);
 	font-family: ui-monospace, "SF Mono", Menlo, monospace;
 	font-size: 0.72rem;
@@ -350,6 +350,28 @@
 		rgba(0, 0, 0, 0.18) 42%,
 		rgba(0, 0, 0, 0.04) 100%
 	);
+}
+
+[data-theme="light"] .activity-card-scrim {
+	background: linear-gradient(
+		to top,
+		rgba(255, 255, 255, 0.55) 0%,
+		rgba(255, 255, 255, 0.18) 48%,
+		transparent 100%
+	);
+}
+
+[data-theme="light"] .activity-card-left--aurora .activity-card-scrim {
+	background: linear-gradient(
+		to top,
+		rgba(255, 255, 255, 0.45) 0%,
+		rgba(255, 255, 255, 0.12) 42%,
+		transparent 100%
+	);
+}
+
+[data-theme="light"] .activity-card-time {
+	text-shadow: none;
 }
 
 .activity-card-time {
@@ -468,7 +490,7 @@
 	padding: 0.45rem 0.85rem;
 	border-radius: 8px;
 	border: 1px solid var(--border);
-	background: rgba(20, 20, 20, 0.92);
+	background: var(--toast-bg);
 	color: var(--muted);
 	font-size: 0.78rem;
 	opacity: 0;

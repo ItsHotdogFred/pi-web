@@ -1,5 +1,6 @@
 import { chatAreaEl, messagesEl, promptHistoryListEl } from "../dom/elements.js";
 import { truncateText, escapeHtml } from "../utils/format.js";
+import { icon } from "../icons/hover-icons.js";
 import { app } from "../state/store.js";
 import { openSession, upsertSession } from "../dashboard/sessions.js";
 import { setStatus } from "../ui/status.js";
@@ -33,8 +34,7 @@ function createHistoryItem(promptId, index, label) {
 	forkBtn.className = "prompt-history-fork";
 	forkBtn.title = "Fork from here";
 	forkBtn.setAttribute("aria-label", `Fork from prompt ${index}`);
-	forkBtn.innerHTML =
-		'<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><circle cx="4" cy="6" r="2" stroke="currentColor" stroke-width="1.1"/><circle cx="8" cy="6" r="2" stroke="currentColor" stroke-width="1.1"/><path d="M6 6h0" stroke="currentColor" stroke-width="1.1"/></svg>';
+	forkBtn.innerHTML = icon("link", { size: 12 });
 
 	item.append(button, forkBtn);
 	if (promptId === activePromptId) item.classList.add("active");

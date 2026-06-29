@@ -1,17 +1,3 @@
-:root {
-	color-scheme: dark;
-	--bg: #141414;
-	--sidebar-bg: #141414;
-	--sidebar-width: 220px;
-	--panel: #141414;
-	--border: #222;
-	--border-subtle: #1a1a1a;
-	--text: #fff;
-	--muted: #888;
-	--muted-dim: #666;
-	--accent: #6366f1;
-}
-
 * {
 	box-sizing: border-box;
 }
@@ -131,9 +117,9 @@ body {
 .dashboard-skeleton .skeleton-block {
 	background: linear-gradient(
 		90deg,
-		rgba(255, 255, 255, 0.04) 0%,
-		rgba(255, 255, 255, 0.08) 50%,
-		rgba(255, 255, 255, 0.04) 100%
+		var(--skeleton-from) 0%,
+		var(--skeleton-mid) 50%,
+		var(--skeleton-from) 100%
 	);
 	background-size: 200% 100%;
 	animation: skeleton-shimmer 1.4s ease-in-out infinite;

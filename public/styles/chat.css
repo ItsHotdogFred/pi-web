@@ -90,7 +90,7 @@
 .msg-plan {
 	border: 1px solid var(--border-subtle);
 	border-radius: 10px;
-	background: #0d0d0d;
+	background: var(--surface-inset);
 	padding: 0.75rem 0.9rem;
 }
 
@@ -109,7 +109,7 @@
 	gap: 0.55rem;
 	padding: 0.45rem 0.55rem;
 	border-radius: 8px;
-	background: rgba(255, 255, 255, 0.02);
+	background: var(--overlay-1);
 	border: 1px solid transparent;
 }
 
@@ -126,7 +126,7 @@
 .plan-item--completed .plan-text {
 	color: var(--muted);
 	text-decoration: line-through;
-	text-decoration-color: rgba(255, 255, 255, 0.2);
+	text-decoration-color: var(--link-underline);
 }
 
 .plan-status {
@@ -168,7 +168,7 @@
 
 .plan-priority--low {
 	color: var(--muted);
-	background: rgba(255, 255, 255, 0.06);
+	background: var(--overlay-5);
 }
 
 .todo-panel {
@@ -176,7 +176,7 @@
 	margin: 0 auto 0.55rem;
 	border: 1px solid var(--border-subtle);
 	border-radius: 10px;
-	background: #0d0d0d;
+	background: var(--surface-inset);
 	padding: 0.65rem 0.85rem 0.7rem;
 }
 
@@ -225,7 +225,7 @@
 	gap: 0.5rem;
 	padding: 0.35rem 0.45rem;
 	border-radius: 7px;
-	background: rgba(255, 255, 255, 0.02);
+	background: var(--overlay-1);
 }
 
 .todo-item--in_progress {
@@ -240,7 +240,7 @@
 .todo-item--completed .todo-subject {
 	color: var(--muted);
 	text-decoration: line-through;
-	text-decoration-color: rgba(255, 255, 255, 0.18);
+	text-decoration-color: var(--overlay-border);
 }
 
 .todo-status {
@@ -314,7 +314,7 @@
 .msg-content .code-block {
 	overflow: hidden;
 	border-radius: 8px;
-	background: #111;
+	background: var(--surface-1);
 	border: 1px solid var(--border-subtle);
 }
 
@@ -323,7 +323,7 @@
 	justify-content: flex-end;
 	align-items: center;
 	padding: 0.2rem 0.3rem;
-	background: #161616;
+	background: var(--surface-2);
 	border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -352,7 +352,7 @@
 	overflow: auto;
 	padding: 0.65rem 0.75rem;
 	border-radius: 8px;
-	background: #111;
+	background: var(--surface-1);
 	border: 1px solid var(--border-subtle);
 	font-size: 0.82rem;
 }
@@ -372,7 +372,7 @@
 .msg-content :not(pre) > code {
 	padding: 0.12rem 0.35rem;
 	border-radius: 4px;
-	background: rgba(255, 255, 255, 0.06);
+	background: var(--overlay-5);
 }
 
 .msg-content .mermaid-diagram,
@@ -382,7 +382,7 @@
 	margin: 0.5rem 0;
 	padding: 0.5rem;
 	border-radius: 8px;
-	background: #111;
+	background: var(--surface-1);
 	border: 1px solid var(--border-subtle);
 }
 
@@ -425,7 +425,7 @@
 }
 
 .msg-content th {
-	background: rgba(255, 255, 255, 0.04);
+	background: var(--overlay-3);
 	font-weight: 600;
 }
 
@@ -434,7 +434,7 @@
 .tool-card {
 	border: 1px solid var(--border-subtle);
 	border-radius: 10px;
-	background: #000;
+	background: var(--surface-terminal);
 	overflow: hidden;
 }
 
@@ -445,7 +445,7 @@
 	width: 100%;
 	padding: 0.6rem 0.85rem;
 	border: none;
-	background: #161616;
+	background: var(--surface-2);
 	color: var(--text);
 	text-align: left;
 	cursor: pointer;
@@ -453,7 +453,7 @@
 }
 
 .tool-header:hover {
-	background: #1a1a1a;
+	background: var(--surface-3);
 }
 
 .tool-chevron {
@@ -536,7 +536,7 @@
 .diff-view {
 	border: 1px solid var(--border-subtle);
 	border-radius: 8px;
-	background: #0a0a0a;
+	background: var(--surface-deep);
 	overflow: auto;
 	max-height: 420px;
 	font-family: ui-monospace, "SF Mono", Menlo, monospace;
@@ -566,7 +566,7 @@
 
 .diff-line-meta {
 	color: var(--muted);
-	background: rgba(255, 255, 255, 0.03);
+	background: var(--overlay-2);
 }
 
 .diff-line-hunk {
@@ -638,12 +638,12 @@
 
 .subagent-view-btn:hover {
 	color: var(--muted);
-	background: rgba(255, 255, 255, 0.04);
+	background: var(--overlay-3);
 }
 
 .subagent-view-btn.is-active {
 	color: var(--text);
-	background: rgba(255, 255, 255, 0.08);
+	background: var(--overlay-7);
 }
 
 .subagent-swimlane {
@@ -692,7 +692,7 @@
 .subagent-lane {
 	border: 1px solid var(--border-subtle);
 	border-radius: 8px;
-	background: #111;
+	background: var(--surface-1);
 	padding: 0.5rem 0.55rem;
 	min-width: 0;
 	flex: 1 1 120px;
@@ -729,7 +729,6 @@
 
 .subagent-lane--running .subagent-lane-icon {
 	color: var(--orange);
-	animation: pulse 1.2s ease-in-out infinite;
 }
 
 .subagent-lane--completed .subagent-lane-icon {
@@ -794,7 +793,7 @@
 	padding: 0.15rem 0.45rem;
 	border-radius: 999px;
 	color: var(--muted);
-	background: rgba(255, 255, 255, 0.05);
+	background: var(--overlay-4);
 }
 
 .subagent-list {
@@ -814,7 +813,7 @@
 .subagent-item {
 	border: 1px solid var(--border-subtle);
 	border-radius: 8px;
-	background: #111;
+	background: var(--surface-1);
 	padding: 0.55rem 0.65rem;
 }
 
@@ -924,7 +923,7 @@
 	margin: 0;
 	padding: 0.6rem 0.7rem;
 	border-radius: 6px;
-	background: #111;
+	background: var(--surface-1);
 	border: 1px solid var(--border-subtle);
 	font-size: 0.76rem;
 	overflow: auto;
@@ -950,7 +949,7 @@
 	margin: 0;
 	padding: 0.6rem 0.7rem;
 	border-radius: 6px;
-	background: #111;
+	background: var(--surface-1);
 	border: 1px solid var(--border-subtle);
 	font-size: 0.76rem;
 	overflow: auto;
@@ -963,7 +962,7 @@
 	margin-bottom: 0.5rem;
 	border: 1px solid var(--border);
 	border-radius: 12px;
-	background: #0f0f0f;
+	background: var(--surface-sunken);
 	overflow: hidden;
 }
 
@@ -1024,17 +1023,17 @@
 
 .file-context-editor-btn:hover {
 	color: var(--text);
-	background: rgba(255, 255, 255, 0.04);
+	background: var(--overlay-3);
 }
 
 .file-context-editor-btn.active {
 	color: var(--text);
-	border-color: rgba(255, 255, 255, 0.18);
-	background: rgba(255, 255, 255, 0.08);
+	border-color: var(--overlay-border);
+	background: var(--overlay-7);
 }
 
 .file-context-header:hover {
-	background: rgba(255, 255, 255, 0.02);
+	background: var(--overlay-1);
 }
 
 .file-context-chevron {
@@ -1083,7 +1082,7 @@
 }
 
 .file-context-item:hover {
-	background: rgba(255, 255, 255, 0.02);
+	background: var(--overlay-1);
 }
 
 .file-context-file {
@@ -1114,7 +1113,7 @@
 
 .file-context-action {
 	border: 1px solid var(--border-subtle);
-	background: rgba(255, 255, 255, 0.03);
+	background: var(--overlay-2);
 	color: var(--muted);
 	font-size: 0.68rem;
 	font-weight: 600;
@@ -1125,7 +1124,7 @@
 
 .file-context-action:hover {
 	color: var(--text);
-	background: rgba(255, 255, 255, 0.07);
+	background: var(--overlay-6);
 }
 
 .file-context-action--diff {
@@ -1137,7 +1136,7 @@
 	flex-shrink: 0;
 	padding: 0.1rem 0.35rem;
 	border-radius: 4px;
-	background: rgba(255, 255, 255, 0.06);
+	background: var(--overlay-5);
 	color: var(--muted);
 	font-size: 0.68rem;
 	font-weight: 600;

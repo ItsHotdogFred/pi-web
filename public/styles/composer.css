@@ -19,7 +19,7 @@
 
 .context-dial:hover,
 .context-dial-wrap.is-open .context-dial {
-	background: rgba(255, 255, 255, 0.05);
+	background: var(--overlay-4);
 	color: var(--text);
 }
 
@@ -35,7 +35,7 @@
 }
 
 .context-dial-track {
-	stroke: rgba(255, 255, 255, 0.1);
+	stroke: var(--dial-track);
 }
 
 .context-dial-fill {
@@ -82,7 +82,7 @@
 	padding: 0.65rem 0.7rem;
 	border: 1px solid var(--border);
 	border-radius: 10px;
-	background: #1a1a1a;
+	background: var(--surface-3);
 	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 	transform-origin: bottom left;
 }
@@ -141,7 +141,7 @@
 .context-breakdown-bar {
 	height: 4px;
 	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.08);
+	background: var(--overlay-7);
 	overflow: hidden;
 }
 
@@ -208,13 +208,13 @@
 
 .context-action-btn--secondary {
 	border-color: var(--border);
-	background: rgba(255, 255, 255, 0.04);
+	background: var(--overlay-3);
 	color: var(--muted);
 }
 
 .context-action-btn--secondary:hover:not(:disabled) {
-	background: rgba(255, 255, 255, 0.08);
-	border-color: #333;
+	background: var(--overlay-7);
+	border-color: var(--border-strong);
 	color: var(--text);
 }
 
@@ -246,8 +246,8 @@
 }
 
 .composer-box:focus-within {
-	border-color: #333;
-	box-shadow: 0 0 0 1px #333;
+	border-color: var(--border-strong);
+	box-shadow: 0 0 0 1px var(--border-strong);
 }
 
 .composer-input-wrap {
@@ -338,7 +338,7 @@
 
 .pill-btn:hover {
 	background: var(--panel-hover);
-	border-color: #333;
+	border-color: var(--border-strong);
 }
 
 .composer-dropdown .dropdown-menu {
@@ -371,14 +371,14 @@
 	padding: 0.45rem 0.6rem;
 	border: 1px solid var(--border);
 	border-radius: 8px;
-	background: #0f0f0f;
+	background: var(--surface-sunken);
 	color: var(--text);
 	font-size: 0.82rem;
 	outline: none;
 }
 
 .model-menu-search-wrap input:focus {
-	border-color: #444;
+	border-color: var(--border-interactive);
 }
 
 .model-menu-search-wrap input::placeholder {
@@ -396,7 +396,7 @@
 }
 
 .composer-box--dashboard {
-	background: #121212;
+	background: var(--panel);
 }
 
 .composer-box--dashboard .composer-input-highlight,
@@ -424,7 +424,7 @@
 	border-radius: 8px;
 	overflow: hidden;
 	border: 1px solid var(--border);
-	background: #0f0f0f;
+	background: var(--surface-sunken);
 	animation: fade-up 0.2s ease both;
 }
 
@@ -451,13 +451,20 @@
 }
 
 .send-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	width: 2.25rem;
 	height: 2.25rem;
 	border: none;
 	border-radius: 50%;
 	background: #fff;
-	color: #000;
+	color: var(--text-inverse);
 	cursor: pointer;
+}
+
+.send-btn .hi {
+	transform: translateY(1px);
 }
 
 .send-btn:disabled {
@@ -497,7 +504,7 @@
 	opacity: 1;
 	margin-bottom: 0.5rem;
 	border-color: var(--border-subtle);
-	background: #0f0f0f;
+	background: var(--surface-sunken);
 	pointer-events: auto;
 }
 

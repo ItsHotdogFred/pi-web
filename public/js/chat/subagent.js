@@ -10,6 +10,13 @@ import {
 	formatSubagentToolCall,
 } from "../utils/tools.js";
 import { enhanceRenderedMarkdown, renderMarkdown } from "../utils/markdown.js";
+import { icon } from "../icons/hover-icons.js";
+
+function subagentStatusIcon(status) {
+	if (status === "running") return icon("refresh", { size: 12, spin: true });
+	if (status === "failed") return icon("x", { size: 12 });
+	return icon("simple-checked", { size: 12 });
+}
 
 export function isSubagentTool(state) {
 	return resolveToolName(state).toLowerCase() === "subagent";
@@ -148,7 +155,7 @@ function subagentProgressLabel(result, status, items) {
 function renderSubagentLane(result, toolRunning, expanded, options = {}) {
 	const status = subagentResultStatus(result, toolRunning);
 	const items = subagentDisplayItems(result.messages);
-	const icon = status === "running" ? "◌" : status === "failed" ? "✗" : "✓";
+	const icon = subagentStatusIcon(status);
 	const source = result.agentSource ? ` (${result.agentSource})` : "";
 	const step = typeof result.step === "number" ? result.step + 1 : null;
 	const progress = subagentProgressLabel(result, status, items);
@@ -224,7 +231,7 @@ function renderSubagentResult(result, toolRunning, expanded) {
 	const status = subagentResultStatus(result, toolRunning);
 	const items = subagentDisplayItems(result.messages);
 	const output = subagentFinalOutput(result);
-	const icon = status === "running" ? "◌" : status === "failed" ? "✗" : "✓";
+	const icon = subagentStatusIcon(status);
 	const source = result.agentSource ? ` (${result.agentSource})` : "";
 	const step =
 		typeof result.step === "number" ? `<span class="subagent-item-step">step ${result.step + 1}</span>` : "";

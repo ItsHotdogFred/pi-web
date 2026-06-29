@@ -13,7 +13,7 @@
 .permission-backdrop {
 	position: absolute;
 	inset: 0;
-	background: rgba(0, 0, 0, 0.65);
+	background: var(--backdrop);
 	backdrop-filter: blur(4px);
 }
 
@@ -24,8 +24,8 @@
 	padding: 1.1rem 1.15rem 1rem;
 	border: 1px solid var(--border);
 	border-radius: 14px;
-	background: #161616;
-	box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+	background: var(--surface-2);
+	box-shadow: 0 16px 48px var(--shadow-modal);
 }
 
 .permission-title {
@@ -39,7 +39,7 @@
 	margin: 0 0 0.85rem;
 	padding: 0.65rem 0.75rem;
 	border-radius: 8px;
-	background: #111;
+	background: var(--surface-1);
 	border: 1px solid var(--border-subtle);
 	font-family: ui-monospace, "SF Mono", Menlo, monospace;
 	font-size: 0.76rem;
@@ -87,7 +87,7 @@
 	padding: 0.45rem 0.8rem;
 	border: 1px solid var(--border);
 	border-radius: 8px;
-	background: rgba(255, 255, 255, 0.04);
+	background: var(--overlay-3);
 	color: var(--text);
 	font-size: 0.82rem;
 	font-weight: 500;
@@ -96,8 +96,8 @@
 }
 
 .permission-btn:hover {
-	background: rgba(255, 255, 255, 0.08);
-	border-color: #333;
+	background: var(--overlay-7);
+	border-color: var(--border-strong);
 }
 
 .permission-btn--allow {
@@ -149,8 +149,8 @@
 	padding: 1.1rem 1.15rem 1rem;
 	border: 1px solid var(--border);
 	border-radius: 14px;
-	background: #161616;
-	box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+	background: var(--surface-2);
+	box-shadow: 0 16px 48px var(--shadow-modal);
 	display: flex;
 	flex-direction: column;
 	gap: 0.55rem;
@@ -188,7 +188,7 @@
 	padding: 0.75rem 0.8rem;
 	border: 1px solid var(--border-subtle);
 	border-radius: 10px;
-	background: #111;
+	background: var(--surface-1);
 	color: var(--text);
 	font-family: ui-monospace, "SF Mono", Menlo, monospace;
 	font-size: 0.82rem;
@@ -221,8 +221,8 @@
 	padding: 1.1rem 1.15rem 1rem;
 	border: 1px solid var(--border);
 	border-radius: 14px;
-	background: #161616;
-	box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+	background: var(--surface-2);
+	box-shadow: 0 16px 48px var(--shadow-modal);
 	display: flex;
 	flex-direction: column;
 	gap: 0.65rem;
@@ -260,7 +260,7 @@
 }
 
 .diff-review-close:hover {
-	background: rgba(255, 255, 255, 0.06);
+	background: var(--overlay-5);
 	color: var(--text);
 }
 
@@ -272,7 +272,7 @@
 	border: 1px solid var(--border-subtle);
 	border-radius: 10px;
 	overflow: hidden;
-	background: #111;
+	background: var(--surface-1);
 }
 
 .diff-review-files {
@@ -281,7 +281,7 @@
 	list-style: none;
 	overflow-y: auto;
 	border-right: 1px solid var(--border-subtle);
-	background: #0f0f0f;
+	background: var(--surface-sunken);
 }
 
 .diff-review-file {
@@ -296,12 +296,12 @@
 }
 
 .diff-review-file:hover {
-	background: rgba(255, 255, 255, 0.04);
+	background: var(--overlay-3);
 }
 
 .diff-review-file.active,
 .diff-review-file:focus-visible {
-	background: rgba(255, 255, 255, 0.08);
+	background: var(--overlay-7);
 }
 
 .diff-review-file-lang {
@@ -312,7 +312,7 @@
 	color: var(--muted);
 	padding: 0.1rem 0.3rem;
 	border-radius: 4px;
-	background: rgba(255, 255, 255, 0.06);
+	background: var(--overlay-5);
 }
 
 .diff-review-file-name {

@@ -1,5 +1,6 @@
 import { app } from "../state/store.js";
 import { basename } from "../utils/format.js";
+import { icon } from "../icons/hover-icons.js";
 
 function sortedSessions() {
 	return [...app.session.sessions].sort(
@@ -57,10 +58,10 @@ export function sessionStatus(session, { isActive, isRunning }) {
 export function sessionBadgeIcon(variant) {
 	switch (variant) {
 		case "running":
-			return `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="3.5" stroke="currentColor" stroke-width="1.2"/><circle cx="5" cy="5" r="1.25" fill="currentColor"/></svg>`;
+			return icon("player", { size: 10, spin: true });
 		case "active":
-			return `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="2.25" fill="currentColor"/></svg>`;
+			return icon("sparkles", { size: 10 });
 		default:
-			return `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="3.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 3v2.5l1.5 1" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>`;
+			return icon("clock", { size: 10 });
 	}
 }

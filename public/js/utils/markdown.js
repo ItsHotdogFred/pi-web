@@ -1,5 +1,6 @@
 import { escapeHtml } from "./format.js";
 import { enhanceMermaidBlocks } from "./mermaid.js";
+import { icon } from "../icons/hover-icons.js";
 
 export { enhanceMermaidBlocks };
 
@@ -48,7 +49,7 @@ export function renderMarkdown(text) {
 	return escapeHtml(text).replaceAll("\n", "<br>");
 }
 
-const COPY_ICON = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" class="code-copy-icon"><rect x="5.5" y="4.5" width="7" height="8" rx="1" stroke="currentColor" stroke-width="1.25"/><path d="M4.5 4.5V4a1.5 1.5 0 0 1 1.5-1.5H9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>`;
+const COPY_ICON = icon("copy", { size: 16, className: "code-copy-icon" });
 
 function showCopiedFeedback(btn) {
 	btn.classList.add("copied");

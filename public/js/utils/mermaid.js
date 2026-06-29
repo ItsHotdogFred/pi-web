@@ -19,6 +19,10 @@ function resolveMermaidApi() {
 	return null;
 }
 
+function getMermaidTheme() {
+	return document.documentElement.dataset.theme === "light" ? "default" : "dark";
+}
+
 function ensureMermaidInitialized() {
 	if (mermaidInitPromise) return mermaidInitPromise;
 	const mermaid = resolveMermaidApi();
@@ -28,7 +32,11 @@ function ensureMermaidInitialized() {
 	}
 	mermaidInitPromise = (async () => {
 		try {
-			await mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "strict" });
+			await mermaid.initialize({
+				startOnLoad: false,
+				theme: getMermaidTheme(),
+				securityLevel: "strict",
+			});
 			return mermaid;
 		} catch {
 			mermaidInitPromise = null;
@@ -112,7 +120,20 @@ export function enhanceMermaidBlocks(container) {
 
 		const div = document.createElement("div");
 		div.className = "mermaid-diagram";
+		div.dataset.mermaidSource = source;
 		pre.replaceWith(div);
+		scheduleRender(div, source);
+	}
+}
+
+export function onThemeChange() {
+	mermaidInitPromise = null;
+	for (const div of document.querySelectorAll(".mermaid-diagram[data-mermaid-source]")) {
+		const source = div.dataset.mermaidSource;
+		if (!source) continue;
+		delete div.dataset.mermaidRendered;
+		div.classList.remove("mermaid-diagram--fallback", "mermaid-diagram--error");
+		div.replaceChildren();
 		scheduleRender(div, source);
 	}
 }

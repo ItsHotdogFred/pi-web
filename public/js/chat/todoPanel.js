@@ -10,6 +10,7 @@ import {
 	selectVisibleOverlayTasks,
 	todoStatusIcon,
 } from "./todoState.js";
+import { icon } from "../icons/hover-icons.js";
 
 const MAX_VISIBLE_LINES = 12;
 const hiddenCompletedIds = new Set();
@@ -120,7 +121,9 @@ function renderTodoPanel() {
 	}
 	const iconEl = $("todo-panel-icon");
 	if (iconEl) {
-		iconEl.textContent = hasActive ? "●" : "○";
+		iconEl.innerHTML = hasActive
+			? icon("refresh", { size: 14, className: "todo-panel-icon", spin: true })
+			: icon("unordered-list", { size: 14, className: "todo-panel-icon" });
 	}
 	if (countEl) countEl.textContent = `(${counts.completed}/${counts.total})`;
 	panelEl.classList.toggle("todo-panel--active", hasActive);

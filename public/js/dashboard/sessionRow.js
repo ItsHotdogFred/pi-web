@@ -1,5 +1,6 @@
 import { app } from "../state/store.js";
 import { hashCode, formatRelativeTime, escapeHtml } from "../utils/format.js";
+import { icon } from "../icons/hover-icons.js";
 import {
 	sessionTitle,
 	sessionProjectName,
@@ -50,15 +51,11 @@ function sessionAccentColor(sessionId) {
 }
 
 function sessionIconSvg(color) {
-	return `<svg class="today-item-icon" style="color:${color}" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-		<path d="M3 3.5h8a1 1 0 011 1v5a1 1 0 01-1 1H6.5L4 13V9.5H3a1 1 0 01-1-1v-5a1 1 0 011-1z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
-	</svg>`;
+	return icon("sparkles", { size: 14, className: "today-item-icon", style: `color:${color}` });
 }
 
 function runningIconSvg() {
-	return `<svg class="today-item-icon running" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-		<circle cx="7" cy="7" r="5.25" stroke="currentColor" stroke-width="1.1"/>
-	</svg>`;
+	return icon("refresh", { size: 14, className: "today-item-icon running", spin: true });
 }
 
 async function applySessionArt(left, sessionId) {

@@ -16,6 +16,7 @@ import { showView, setNavActive } from "../ui/views.js";
 import { renderSessions } from "../dashboard/sessions.js";
 import { searchSessionsDebounced, clearSessionSearch } from "../dashboard/sessionSearch.js";
 import { cycleActivityArtStyle } from "../dashboard/activity.js";
+import { cycleTheme } from "../ui/theme.js";
 import { reconnect } from "../wire/websocket.js";
 import { addImageAttachment } from "../composer/attachments.js";
 import { bindAllComposers } from "../composer/bind.js";
@@ -69,6 +70,11 @@ export function bindEvents() {
 		if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "g") {
 			e.preventDefault();
 			void cycleActivityArtStyle();
+			return;
+		}
+		if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "l") {
+			e.preventDefault();
+			void cycleTheme();
 			return;
 		}
 		if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "n") {

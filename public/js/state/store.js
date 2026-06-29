@@ -61,6 +61,8 @@ export const app = {
 		contextCompactPending: false,
 		activityArtStyle: "aurora",
 		artStyleToastTimer: null,
+		themeMode: "system",
+		themeToastTimer: null,
 		contributionsLoading: false,
 		contributionsRequestId: 0,
 	},
