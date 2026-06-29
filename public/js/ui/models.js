@@ -85,9 +85,8 @@ function toggleFavourite(modelId, btn) {
 	saveFavourites();
 	// Update the star icon in-place for snappy feedback, and re-render lists.
 	updateFavButton(btn, modelId);
-	renderModelMenuList("model-menu-list");
+renderModelMenuList("model-menu-list");
 	renderModelMenuList("chat-model-menu-list");
-	updateFavToggleHeaders();
 }
 
 function updateFavButton(btn, modelId) {
@@ -98,43 +97,9 @@ function updateFavButton(btn, modelId) {
 	btn.setAttribute("aria-pressed", active ? "true" : "false");
 }
 
-function updateFavToggleHeaders() {
-	for (const id of ["model-menu-favs-toggle", "chat-model-menu-favs-toggle"]) {
-		const el = $(id);
-		if (!el) continue;
-		el.classList.toggle("is-active", app.models.favouritesOnly);
-		el.textContent = app.models.favouritesOnly ? "★ Favourites only" : "★ Favourites";
-	}
-}
-
-function buildMenuHeader(listEl) {
-	// Insert a header with the favourites-only toggle above the list, once per list.
-	const list = listEl;
-	const parent = list.parentElement;
-	if (!parent || parent.querySelector(".model-menu-header")) return;
-	const header = document.createElement("div");
-	header.className = "model-menu-header";
-	const toggle = document.createElement("button");
-	toggle.type = "button";
-	toggle.className = "model-menu-favs-toggle";
-	toggle.id = list.id === "chat-model-menu-list" ? "chat-model-menu-favs-toggle" : "model-menu-favs-toggle";
-	toggle.addEventListener("click", (e) => {
-		e.stopPropagation();
-		app.models.favouritesOnly = !app.models.favouritesOnly;
-		saveFavsOnly();
-		updateFavToggleHeaders();
-		renderModelMenuList("model-menu-list");
-		renderModelMenuList("chat-model-menu-list");
-	});
-	header.appendChild(toggle);
-	parent.insertBefore(header, list);
-	updateFavToggleHeaders();
-}
-
 function renderModelMenuList(listId = "model-menu-list") {
 	const list = $(listId);
 	if (!list) return;
-	buildMenuHeader(list);
 
 	list.replaceChildren();
 	const items = filteredModels();
@@ -226,7 +191,6 @@ export function openModelDropdown(scope = "dashboard") {
 export function toggleFavouritesOnly() {
 	app.models.favouritesOnly = !app.models.favouritesOnly;
 	saveFavsOnly();
-	updateFavToggleHeaders();
 	renderModelMenuList("model-menu-list");
 	renderModelMenuList("chat-model-menu-list");
 	return app.models.favouritesOnly;
